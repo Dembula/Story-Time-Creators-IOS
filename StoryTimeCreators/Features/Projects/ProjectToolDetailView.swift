@@ -20,9 +20,9 @@ struct ProjectToolDetailView: View {
             header
             Group {
                 switch vm.state {
-                case .loading where vm.displayMode == .loading:
+                case .loading where vm.isDisplayLoading:
                     LoadingStateView(message: "Loading \(tool.label)…")
-                case .error(let message) where vm.displayMode == .loading:
+                case .error(let message) where vm.isDisplayLoading:
                     ErrorStateView(message: message, retry: { Task { await vm.load(auth: auth) } })
                 default:
                     ScrollView {
@@ -35,7 +35,7 @@ struct ProjectToolDetailView: View {
 
                             toolContent
 
-                            if vm.displayMode != .loading {
+                            if !vm.isDisplayLoading {
                                 Button {
                                     Task { await vm.markInProgress(auth: auth) }
                                 } label: {
@@ -262,6 +262,11 @@ final class ProjectToolDetailViewModel: ObservableObject {
     @Published var isMarkingProgress = false
     @Published var progressMessage: String?
 
+    var isDisplayLoading: Bool {
+        if case .loading = displayMode { return true }
+        return false
+    }
+
     let projectId: String
     let tool: ProjectTool
     private let client = APIClient.shared
@@ -341,7 +346,8 @@ final class ProjectToolDetailViewModel: ObservableObject {
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return nil
         }
-        return Self.flattenJSON(json, prefix: "", limit: 24)
+        let lines = Self.flattenJSON(json, prefix: "", limit: 24)
+        return lines.isEmpty ? nil : lines
     }
 
     private static func flattenJSON(_ object: Any, prefix: String, limit: Int) -> [String] {
@@ -370,7 +376,7 @@ final class ProjectToolDetailViewModel: ObservableObject {
             }
         }
         walk(object, key: prefix)
-        return lines.isEmpty ? nil : lines
+        return lines
     }
 
     private static func mapError(_ error: Error, auth: AuthService) -> String {

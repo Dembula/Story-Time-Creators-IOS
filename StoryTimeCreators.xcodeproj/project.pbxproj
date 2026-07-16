@@ -10,9 +10,22 @@
 		A10000000000000000000001 /* StoryTimeCreators.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = StoryTimeCreators.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		A10000000000000000000011 /* Exceptions for "StoryTimeCreators" folder in "StoryTimeCreators" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				OAuthURLTypes.plist,
+			);
+			target = A10000000000000000000050 /* StoryTimeCreators */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A10000000000000000000010 /* StoryTimeCreators */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A10000000000000000000011 /* Exceptions for "StoryTimeCreators" folder in "StoryTimeCreators" target */,
+			);
 			path = StoryTimeCreators;
 			sourceTree = "<group>";
 		};
