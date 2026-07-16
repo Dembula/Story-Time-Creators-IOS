@@ -1,0 +1,27 @@
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xccheckout
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+timeline.xctimeline
+playground.xcworkspace
+
+# macOS
+.DS_Store
+
+# Reference clone of the web app (local only)
+_ref-web/
+
+# Secrets
+.env
+*.pem
+AuthKey_*.p8
+
+# Cursor / IDE
+.cursor/
