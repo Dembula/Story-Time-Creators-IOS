@@ -286,7 +286,7 @@ private final class CommandCenterViewModel: ObservableObject {
                 "/api/creator/command-center",
                 query: [URLQueryItem(name: "range", value: "month")]
             )
-            async let calendar = loadCalendar(month: Date())
+            async let calendar = fetchCalendar(month: Date())
             async let projectList: ProjectsResponse = client.get("/api/creator/projects")
 
             let (c, cal, projs) = try await (center, calendar, projectList)
@@ -300,15 +300,19 @@ private final class CommandCenterViewModel: ObservableObject {
     }
 
     func loadCalendar(month: Date) async {
+        calendarEvents = await fetchCalendar(month: month)
+    }
+
+    private func fetchCalendar(month: Date) async -> [CommandCenterCalendarEvent] {
         let monthKey = DateParser.monthKey(month)
         do {
             let payload: CommandCenterCalendarPayload = try await client.get(
                 "/api/creator/command-center/calendar",
                 query: [URLQueryItem(name: "month", value: monthKey)]
             )
-            calendarEvents = payload.events ?? []
+            return payload.events ?? []
         } catch {
-            // keep existing events on failure
+            return calendarEvents
         }
     }
 
