@@ -84,10 +84,6 @@ enum AppDestination: String, CaseIterable, Identifiable, Hashable {
     static let pipeline: [AppDestination] = [
         .preProduction, .production, .postProduction,
     ]
-
-    static let tools: [AppDestination] = [
-        .cast, .crew, .locations, .equipment, .catering, .music, .legalInbox,
-    ]
 }
 
 enum ProjectTool: String, CaseIterable, Identifiable, Hashable {
@@ -234,6 +230,16 @@ enum ProjectTool: String, CaseIterable, Identifiable, Hashable {
 
     static func tools(for phase: ProjectPhase) -> [ProjectTool] {
         allCases.filter { $0.phase == phase }
+    }
+
+    /// Tools shown on phase hub pages (matches web `POST_PRODUCTION_HUB_TOOLS`).
+    static func hubTools(for phase: ProjectPhase) -> [ProjectTool] {
+        switch phase {
+        case .postProduction:
+            return [.musicScoring, .distribution]
+        default:
+            return tools(for: phase)
+        }
     }
 
     var systemImage: String {

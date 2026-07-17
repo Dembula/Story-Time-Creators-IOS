@@ -25,25 +25,33 @@ struct AccountView: View {
             VStack(alignment: .leading, spacing: 20) {
                 profileHeader
 
-                VStack(alignment: .leading, spacing: 14) {
-                    SectionHeader(title: "Profile")
-                    field("Name", text: $vm.name)
+                section("Public profile") {
+                    field("Display name", text: $vm.name)
+                    field("Professional name", text: $vm.professionalName)
                     field("Headline", text: $vm.headline)
+                    field("Network handle", text: $vm.networkHandle)
                     field("Location", text: $vm.location)
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Bio")
-                            .font(STFont.body(12, weight: .medium))
-                            .foregroundStyle(STColor.textMuted)
-                        TextField("Tell creators about your work", text: $vm.bio, axis: .vertical)
-                            .lineLimit(4...8)
-                            .font(STFont.body(14))
-                            .padding(12)
-                            .background(RoundedRectangle(cornerRadius: 12).fill(STColor.surfaceElevated))
-                            .foregroundStyle(STColor.textPrimary)
-                    }
+                    field("Website", text: $vm.website)
+                    bioField
                 }
-                .padding(16)
-                .glassPanel()
+
+                section("Contact") {
+                    field("Email", text: $vm.email)
+                    field("Phone", text: $vm.phoneNumber)
+                }
+
+                section("Creator details") {
+                    field("Primary role", text: $vm.primaryRole)
+                    field("Skills", text: $vm.skills)
+                    field("Expertise areas", text: $vm.expertiseAreas)
+                    field("Years experience", text: $vm.yearsExperience)
+                    field("Availability", text: $vm.availabilityStatus)
+                }
+
+                section("Security") {
+                    field("Current password", text: $vm.currentPassword, secure: true)
+                    field("New password", text: $vm.newPassword, secure: true)
+                }
 
                 if let saveMessage = vm.saveMessage {
                     Text(saveMessage)
@@ -51,13 +59,9 @@ struct AccountView: View {
                         .foregroundStyle(vm.saveSucceeded ? STColor.success : STColor.danger)
                 }
 
-                Button {
-                    Task { await vm.save(auth: auth) }
-                } label: {
+                Button { Task { await vm.save(auth: auth) } } label: {
                     HStack {
-                        if vm.isSaving {
-                            ProgressView().tint(.black)
-                        }
+                        if vm.isSaving { ProgressView().tint(.black) }
                         Text("Save changes")
                             .font(STFont.body(15, weight: .semibold))
                     }
@@ -68,18 +72,24 @@ struct AccountView: View {
                 }
                 .disabled(vm.isSaving)
 
-                Button(role: .destructive) {
-                    Task { await auth.signOut() }
-                } label: {
+                if vm.user?.multiRole == true, let roles = vm.user?.platformRoles {
+                    VStack(alignment: .leading, spacing: 8) {
+                        SectionHeader(title: "Platform roles")
+                        Text(roles.joined(separator: ", "))
+                            .font(STFont.body(12))
+                            .foregroundStyle(STColor.textSecondary)
+                    }
+                    .padding(16)
+                    .glassPanel()
+                }
+
+                Button(role: .destructive) { Task { await auth.signOut() } } label: {
                     Text("Sign out")
                         .font(STFont.body(15, weight: .semibold))
                         .foregroundStyle(STColor.danger)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .stroke(STColor.danger.opacity(0.4), lineWidth: 1)
-                        )
+                        .background(RoundedRectangle(cornerRadius: 14).stroke(STColor.danger.opacity(0.4)))
                 }
             }
             .padding(16)
@@ -90,10 +100,10 @@ struct AccountView: View {
         HStack(spacing: 14) {
             Circle()
                 .fill(STColor.primary.opacity(0.2))
-                .frame(width: 64, height: 64)
+                .frame(width: 72, height: 72)
                 .overlay {
                     Text(String((vm.user?.displayName ?? "C").prefix(1)).uppercased())
-                        .font(STFont.display(24, weight: .bold))
+                        .font(STFont.display(28, weight: .bold))
                         .foregroundStyle(STColor.primary)
                 }
             VStack(alignment: .leading, spacing: 4) {
@@ -101,12 +111,10 @@ struct AccountView: View {
                     .font(STFont.display(20, weight: .bold))
                     .foregroundStyle(STColor.textPrimary)
                 if let email = vm.user?.email {
-                    Text(email)
-                        .font(STFont.body(13))
-                        .foregroundStyle(STColor.textSecondary)
+                    Text(email).font(STFont.body(13)).foregroundStyle(STColor.textSecondary)
                 }
-                if let role = vm.user?.effectiveRole, !role.isEmpty {
-                    Text(role.replacingOccurrences(of: "_", with: " "))
+                if let score = vm.user?.reputationScore {
+                    Text("Reputation \(Int(score))")
                         .font(STFont.body(11, weight: .semibold))
                         .foregroundStyle(STColor.accent)
                 }
@@ -117,35 +125,62 @@ struct AccountView: View {
         .glassPanel()
     }
 
-    private func field(_ title: String, text: Binding<String>) -> some View {
+    private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SectionHeader(title: title)
+            content()
+        }
+        .padding(16)
+        .glassPanel()
+    }
+
+    private var bioField: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(STFont.body(12, weight: .medium))
-                .foregroundStyle(STColor.textMuted)
-            TextField(title, text: text)
+            Text("Bio").font(STFont.body(12, weight: .medium)).foregroundStyle(STColor.textMuted)
+            TextField("Tell creators about your work", text: $vm.bio, axis: .vertical)
+                .lineLimit(4...10)
                 .font(STFont.body(14))
                 .padding(12)
                 .background(RoundedRectangle(cornerRadius: 12).fill(STColor.surfaceElevated))
-                .foregroundStyle(STColor.textPrimary)
+        }
+    }
+
+    private func field(_ title: String, text: Binding<String>, secure: Bool = false) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(STFont.body(12, weight: .medium)).foregroundStyle(STColor.textMuted)
+            Group {
+                if secure { SecureField(title, text: text) } else { TextField(title, text: text) }
+            }
+            .font(STFont.body(14))
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 12).fill(STColor.surfaceElevated))
+            .foregroundStyle(STColor.textPrimary)
         }
     }
 }
 
 @MainActor
 private final class AccountViewModel: ObservableObject {
-    enum LoadState: Equatable {
-        case idle
-        case loading
-        case loaded
-        case error(String)
-    }
+    enum LoadState: Equatable { case idle, loading, loaded, error(String) }
 
     @Published private(set) var user: CreatorUser?
     @Published private(set) var state: LoadState = .idle
     @Published var name = ""
+    @Published var professionalName = ""
     @Published var headline = ""
     @Published var bio = ""
     @Published var location = ""
+    @Published var website = ""
+    @Published var networkHandle = ""
+    @Published var email = ""
+    @Published var phoneNumber = ""
+    @Published var primaryRole = ""
+    @Published var skills = ""
+    @Published var expertiseAreas = ""
+    @Published var yearsExperience = ""
+    @Published var availabilityStatus = ""
+    @Published var currentPassword = ""
+    @Published var newPassword = ""
     @Published var isSaving = false
     @Published var saveMessage: String?
     @Published var saveSucceeded = false
@@ -154,18 +189,14 @@ private final class AccountViewModel: ObservableObject {
 
     func refresh(auth: AuthService) async {
         state = .loading
-        saveMessage = nil
         do {
             let me: CreatorUser = try await client.get("/api/me")
-            apply(me)
+            user = me
+            auth.applyProfile(me)
+            bind(me)
             state = .loaded
         } catch {
-            if let current = auth.currentUser {
-                apply(current)
-                state = .loaded
-            } else {
-                state = .error(Self.mapError(error, auth: auth))
-            }
+            state = .error(mapError(error, auth: auth))
         }
     }
 
@@ -174,33 +205,47 @@ private final class AccountViewModel: ObservableObject {
         saveMessage = nil
         defer { isSaving = false }
 
-        let body = UpdateProfileBody(
+        let body = AccountPatchBody(
             name: name.nilIfEmpty,
-            headline: headline.nilIfEmpty,
+            email: email.nilIfEmpty,
+            phoneNumber: phoneNumber.nilIfEmpty,
             bio: bio.nilIfEmpty,
-            location: location.nilIfEmpty
+            headline: headline.nilIfEmpty,
+            location: location.nilIfEmpty,
+            website: website.nilIfEmpty,
+            networkHandle: networkHandle.nilIfEmpty,
+            currentPassword: currentPassword.nilIfEmpty,
+            newPassword: newPassword.nilIfEmpty
         )
 
         do {
             let updated: CreatorUser = try await client.patch("/api/me", body: body)
-            apply(updated)
+            user = updated
+            auth.currentUser = updated
+            bind(updated)
+            currentPassword = ""
+            newPassword = ""
             saveSucceeded = true
-            saveMessage = "Profile updated."
+            saveMessage = "Profile saved."
         } catch {
             saveSucceeded = false
-            saveMessage = Self.mapError(error, auth: auth)
+            saveMessage = mapError(error, auth: auth)
         }
     }
 
-    private func apply(_ user: CreatorUser) {
-        self.user = user
-        name = user.name ?? ""
-        headline = user.headline ?? ""
-        bio = user.bio ?? ""
-        location = user.location ?? ""
+    private func bind(_ me: CreatorUser) {
+        name = me.name ?? ""
+        professionalName = me.professionalName ?? ""
+        headline = me.headline ?? ""
+        bio = me.bio ?? ""
+        location = me.location ?? ""
+        website = me.website ?? ""
+        networkHandle = me.networkHandle ?? ""
+        email = me.email ?? ""
+        phoneNumber = me.phoneNumber ?? ""
     }
 
-    private static func mapError(_ error: Error, auth: AuthService) -> String {
+    private func mapError(_ error: Error, auth: AuthService) -> String {
         if let api = error as? APIError, case .unauthorized = api {
             Task { await auth.signOut() }
             return api.errorDescription ?? "Please sign in again."
@@ -209,16 +254,22 @@ private final class AccountViewModel: ObservableObject {
     }
 }
 
-private struct UpdateProfileBody: Encodable {
+private struct AccountPatchBody: Encodable {
     var name: String?
-    var headline: String?
+    var email: String?
+    var phoneNumber: String?
     var bio: String?
+    var headline: String?
     var location: String?
+    var website: String?
+    var networkHandle: String?
+    var currentPassword: String?
+    var newPassword: String?
 }
 
 private extension String {
     var nilIfEmpty: String? {
-        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+        let t = trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? nil : t
     }
 }

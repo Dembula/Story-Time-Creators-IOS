@@ -4,13 +4,14 @@ struct CommandCenterView: View {
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var auth: AuthService
     @StateObject private var vm = CommandCenterViewModel()
+    @State private var calendarMonth = Date()
 
     var body: some View {
         Group {
             switch vm.state {
-            case .loading where vm.payload == nil:
+            case .loading where vm.response == nil:
                 LoadingStateView(message: "Loading command center…")
-            case .error(let message) where vm.payload == nil:
+            case .error(let message) where vm.response == nil:
                 ErrorStateView(message: message, retry: { Task { await vm.load(auth: auth) } })
             default:
                 content
@@ -23,137 +24,257 @@ struct CommandCenterView: View {
 
     private var content: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                if let stats = vm.payload?.stats {
-                    statsGrid(stats)
+            VStack(alignment: .leading, spacing: 22) {
+                if let overview = vm.response?.overview {
+                    overviewStrip(overview)
                 }
-
-                if let projects = vm.payload?.recentProjects, !projects.isEmpty {
-                    SectionHeader(title: "Recent Projects", trailing: "\(projects.count)")
-                    ForEach(projects) { project in
-                        projectRow(project)
-                    }
-                } else if vm.state != .loading {
-                    EmptyStateView(
-                        title: "No recent projects",
-                        subtitle: "Create a project to start your pipeline.",
-                        systemImage: "folder"
-                    )
-                }
-
-                SectionHeader(title: "Calendar", trailing: vm.calendarEvents.count > 0 ? "\(vm.calendarEvents.count) events" : nil)
-                if vm.calendarEvents.isEmpty {
-                    EmptyStateView(
-                        title: "No upcoming events",
-                        subtitle: "Shoot days, tasks, and milestones appear here.",
-                        systemImage: "calendar"
-                    )
-                } else {
-                    ForEach(vm.calendarEvents) { event in
-                        calendarRow(event)
-                    }
-                }
+                revenueSection
+                engagementSection
+                productionSection
+                topContentSection
+                projectsSection
+                calendarSection
+                retentionSection
             }
             .padding(16)
         }
     }
 
-    private func statsGrid(_ stats: CommandCenterStats) -> some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-            StatTile(title: "Projects", value: "\(stats.projectCount ?? 0)", icon: "folder.fill")
-            StatTile(title: "Catalogue", value: "\(stats.catalogueCount ?? 0)", icon: "film.stack.fill")
-            StatTile(title: "Watch Hours", value: formatHours(stats.watchHours), icon: "play.circle.fill")
-            StatTile(title: "Revenue (ZAR)", value: formatCurrency(stats.revenueZar), icon: "chart.line.uptrend.xyaxis")
-            StatTile(title: "Unread Messages", value: "\(stats.messagesUnread ?? 0)", icon: "bubble.left.fill")
-            StatTile(title: "Connections", value: "\(stats.networkConnections ?? 0)", icon: "person.2.fill")
+    private func overviewStrip(_ overview: CommandCenterOverview) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                miniStat("Active projects", value: "\(overview.activeProjects ?? 0)", icon: "folder.fill")
+                miniStat("Views (7d)", value: "\(overview.viewsLast7d ?? 0)", icon: "eye.fill")
+                if let growth = overview.viewerGrowth7dPct {
+                    miniStat("Growth", value: String(format: "%.1f%%", growth), icon: "chart.line.uptrend.xyaxis")
+                }
+                if let rate = overview.engagementRateApprox {
+                    miniStat("Engagement", value: String(format: "%.1f%%", rate), icon: "heart.fill")
+                }
+                if let title = overview.topFilmTitle {
+                    miniStat("Top title", value: title, icon: "star.fill")
+                }
+            }
         }
     }
 
-    private func projectRow(_ project: CreatorProject) -> some View {
-        Button {
-            router.openProject(project.id)
-        } label: {
-            HStack(spacing: 14) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(project.title)
-                        .font(STFont.body(15, weight: .semibold))
-                        .foregroundStyle(STColor.textPrimary)
-                        .lineLimit(1)
-                    Text(project.phaseLabel)
-                        .font(STFont.body(12))
-                        .foregroundStyle(STColor.textSecondary)
-                    if let logline = project.logline, !logline.isEmpty {
-                        Text(logline)
-                            .font(STFont.body(12))
+    private var revenueSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "Revenue & watch time", trailing: vm.response?.analytics?.rangeKey?.uppercased())
+            if let revenue = vm.response?.analytics?.revenue {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                    StatTile(title: "Revenue (ZAR)", value: formatZAR(revenue.amount), icon: "banknote.fill")
+                    StatTile(title: "Your share", value: formatPercent(revenue.sharePercent), icon: "percent")
+                    StatTile(title: "Watch time", value: formatDuration(revenue.watchTimeSeconds), icon: "clock.fill")
+                    StatTile(title: "Views (period)", value: "\(revenue.totalViews ?? 0)", icon: "play.circle.fill")
+                    StatTile(title: "Streams", value: "\(revenue.streamCount ?? 0)", icon: "film.fill")
+                    StatTile(title: "Per view", value: formatZAR(revenue.perViewRand), icon: "chart.bar.fill")
+                }
+            } else {
+                EmptyStateView(title: "No revenue data", subtitle: "Publish catalogue titles to start earning.", systemImage: "chart.line.uptrend.xyaxis")
+            }
+        }
+    }
+
+    private var engagementSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "Viewer engagement")
+            if let e = vm.response?.analytics?.engagement {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                    StatTile(title: "Total views", value: "\(e.totalViews ?? 0)", icon: "eye.fill")
+                    StatTile(title: "Unique watchers", value: "\(e.uniqueWatchers ?? 0)", icon: "person.2.fill")
+                    StatTile(title: "Avg watch", value: formatDuration(e.averageWatchTimeSeconds), icon: "timer")
+                    StatTile(title: "Comments", value: "\(e.totalComments ?? 0)", icon: "bubble.left.fill")
+                    StatTile(title: "Ratings", value: "\(e.totalRatings ?? 0)", icon: "star.fill")
+                    StatTile(title: "Watchlist adds", value: "\(e.watchlistCount ?? 0)", icon: "bookmark.fill")
+                }
+            }
+        }
+    }
+
+    private var productionSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "Production pulse")
+            if let p = vm.response?.production {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                    StatTile(title: "Shoot days", value: "\(p.shootDaysTotal ?? 0)", icon: "video.fill")
+                    StatTile(title: "Open incidents", value: "\(p.openIncidents ?? 0)", icon: "exclamationmark.triangle.fill")
+                    StatTile(title: "Call sheets", value: "\(p.callSheetsSaved ?? 0)", icon: "doc.richtext.fill")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var topContentSection: some View {
+        let rows = vm.response?.analytics?.contentPerformance ?? []
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Top catalogue performance", trailing: "\(rows.count)")
+                ForEach(rows.prefix(5)) { row in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(row.title)
+                                .font(STFont.body(14, weight: .semibold))
+                                .foregroundStyle(STColor.textPrimary)
+                            Text([row.type, row.reviewStatus].compactMap { $0 }.joined(separator: " · "))
+                                .font(STFont.body(11))
+                                .foregroundStyle(STColor.textMuted)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("\(row.views ?? 0) views")
+                                .font(STFont.body(12, weight: .medium))
+                                .foregroundStyle(STColor.accent)
+                            Text(formatDuration(row.watchTimeSeconds))
+                                .font(STFont.body(11))
+                                .foregroundStyle(STColor.textMuted)
+                        }
+                    }
+                    .padding(12)
+                    .glassPanel()
+                }
+            }
+        }
+    }
+
+    private var projectsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "My projects", trailing: "\(vm.projects.count)")
+            if vm.projects.isEmpty {
+                EmptyStateView(title: "No projects", subtitle: "Create a project to unlock the pipeline.", systemImage: "folder.badge.plus")
+            } else {
+                ForEach(vm.projects.prefix(6)) { project in
+                    Button { router.openProject(project.id) } label: {
+                        HStack(spacing: 12) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(project.title)
+                                    .font(STFont.body(15, weight: .semibold))
+                                    .foregroundStyle(STColor.textPrimary)
+                                HStack(spacing: 8) {
+                                    phaseBadge(project.phaseLabel)
+                                    if let genre = project.genre { Text(genre).font(STFont.body(11)).foregroundStyle(STColor.textMuted) }
+                                }
+                                if let logline = project.logline, !logline.isEmpty {
+                                    Text(logline)
+                                        .font(STFont.body(12))
+                                        .foregroundStyle(STColor.textSecondary)
+                                        .lineLimit(2)
+                                }
+                            }
+                            Spacer()
+                            if let rollup = project.pipelineRollup?.overallPercent {
+                                Text("\(Int(rollup))%")
+                                    .font(STFont.mono(13, weight: .bold))
+                                    .foregroundStyle(STColor.accent)
+                            }
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(STColor.textMuted)
+                        }
+                        .padding(14)
+                        .glassPanel()
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private var calendarSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "Calendar", trailing: "\(vm.calendarEvents.count) events")
+            CalendarGridView(
+                events: vm.calendarEvents,
+                displayedMonth: $calendarMonth,
+                onSelectEvent: { _ in }
+            )
+        }
+        .onChange(of: calendarMonth) { _, newMonth in
+            Task { await vm.loadCalendar(month: newMonth) }
+        }
+    }
+
+    @ViewBuilder
+    private var retentionSection: some View {
+        if let retention = vm.response?.retention, let curve = retention.curve, !curve.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Audience retention", trailing: "n=\(retention.sampleSize ?? 0)")
+                ForEach(curve) { point in
+                    HStack {
+                        Text("\(point.checkpoint)%")
+                            .font(STFont.mono(12))
                             .foregroundStyle(STColor.textMuted)
-                            .lineLimit(2)
+                            .frame(width: 36, alignment: .leading)
+                        GeometryReader { geo in
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(STColor.brandGradient)
+                                .frame(width: geo.size.width * CGFloat(point.retainedPct / 100))
+                        }
+                        .frame(height: 8)
+                        Text(String(format: "%.0f%%", point.retainedPct))
+                            .font(STFont.body(11))
+                            .foregroundStyle(STColor.textSecondary)
+                            .frame(width: 40, alignment: .trailing)
                     }
                 }
-                Spacer()
-                if let percent = project.pipelineRollup?.overallPercent {
-                    Text("\(Int(percent))%")
-                        .font(STFont.mono(13, weight: .semibold))
-                        .foregroundStyle(STColor.accent)
-                }
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(STColor.textMuted)
             }
-            .padding(14)
-            .glassPanel()
         }
-        .buttonStyle(.plain)
     }
 
-    private func calendarRow(_ event: CalendarEvent) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "calendar")
-                .foregroundStyle(STColor.primary)
-                .frame(width: 28)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(event.title)
-                    .font(STFont.body(14, weight: .semibold))
-                    .foregroundStyle(STColor.textPrimary)
-                if let starts = event.startsAt {
-                    Text(starts)
-                        .font(STFont.body(12))
-                        .foregroundStyle(STColor.textSecondary)
-                }
-                if let notes = event.notes, !notes.isEmpty {
-                    Text(notes)
-                        .font(STFont.body(12))
-                        .foregroundStyle(STColor.textMuted)
-                        .lineLimit(2)
-                }
-            }
-            Spacer()
+    private func miniStat(_ title: String, value: String, icon: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Image(systemName: icon).foregroundStyle(STColor.primary)
+            Text(value)
+                .font(STFont.body(14, weight: .bold))
+                .foregroundStyle(STColor.textPrimary)
+                .lineLimit(1)
+            Text(title)
+                .font(STFont.body(10))
+                .foregroundStyle(STColor.textMuted)
         }
-        .padding(14)
+        .padding(12)
+        .frame(width: 140, alignment: .leading)
         .glassPanel()
     }
 
-    private func formatHours(_ value: Double?) -> String {
-        guard let value else { return "0" }
-        return String(format: "%.1f", value)
+    private func phaseBadge(_ label: String) -> some View {
+        Text(label.uppercased())
+            .font(STFont.body(10, weight: .bold))
+            .foregroundStyle(STColor.primary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(STColor.primary.opacity(0.15)))
     }
 
-    private func formatCurrency(_ value: Double?) -> String {
+    private func formatZAR(_ value: Double?) -> String {
         guard let value else { return "R0" }
-        return String(format: "R%.0f", value)
+        return String(format: "R%.2f", value)
+    }
+
+    private func formatPercent(_ value: Double?) -> String {
+        guard let value else { return "0%" }
+        return String(format: "%.1f%%", value)
+    }
+
+    private func formatDuration(_ seconds: Double?) -> String {
+        guard let seconds, seconds > 0 else { return "0m" }
+        let hours = Int(seconds) / 3600
+        let mins = (Int(seconds) % 3600) / 60
+        if hours > 0 { return "\(hours)h \(mins)m" }
+        return "\(mins)m"
     }
 }
 
 @MainActor
 private final class CommandCenterViewModel: ObservableObject {
     enum LoadState: Equatable {
-        case idle
-        case loading
-        case loaded
-        case error(String)
+        case idle, loading, loaded, error(String)
     }
 
-    @Published private(set) var payload: CommandCenterPayload?
-    @Published private(set) var calendarEvents: [CalendarEvent] = []
+    @Published private(set) var response: CommandCenterAPIResponse?
+    @Published private(set) var calendarEvents: [CommandCenterCalendarEvent] = []
+    @Published private(set) var projects: [CreatorProject] = []
     @Published private(set) var state: LoadState = .idle
 
     private let client = APIClient.shared
@@ -161,99 +282,37 @@ private final class CommandCenterViewModel: ObservableObject {
     func load(auth: AuthService) async {
         state = .loading
         do {
-            async let centerTask = loadCommandCenter()
-            async let calendarTask = loadCalendar()
-            async let projectsTask = loadRecentProjectsFallback()
-
-            let (center, calendar, projects) = try await (centerTask, calendarTask, projectsTask)
-
-            var merged = center
-            if merged.recentProjects?.isEmpty != false, !projects.isEmpty {
-                merged.recentProjects = projects
-            }
-            if merged.calendarEvents?.isEmpty != false, !calendar.isEmpty {
-                merged.calendarEvents = calendar
-            }
-
-            payload = merged
-            calendarEvents = merged.calendarEvents ?? calendar
-            state = .loaded
-        } catch {
-            state = .error(Self.mapError(error, auth: auth))
-        }
-    }
-
-    private func loadCommandCenter() async throws -> CommandCenterPayload {
-        do {
-            return try await client.get(
+            async let center: CommandCenterAPIResponse = client.get(
                 "/api/creator/command-center",
                 query: [URLQueryItem(name: "range", value: "month")]
             )
-        } catch let error as APIError {
-            if case .decoding = error {
-                return try await loadCommandCenterMapped()
-            }
-            throw error
-        }
-    }
+            async let calendar = loadCalendar(month: Date())
+            async let projectList: ProjectsResponse = client.get("/api/creator/projects")
 
-    private func loadCommandCenterMapped() async throws -> CommandCenterPayload {
-        guard let url = client.url(
-            "/api/creator/command-center",
-            query: [URLQueryItem(name: "range", value: "month")]
-        ) else { throw APIError.invalidURL }
-
-        let (data, response) = try await client.session.data(from: url)
-        guard let http = response as? HTTPURLResponse else { throw APIError.network("Invalid response.") }
-        if http.statusCode == 401 { throw APIError.unauthorized }
-        guard (200..<300).contains(http.statusCode) else {
-            throw APIError.http(http.statusCode, String(data: data, encoding: .utf8))
-        }
-
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw APIError.decoding("Unexpected command center shape.")
-        }
-
-        var stats = CommandCenterStats()
-        if let overview = json["overview"] as? [String: Any] {
-            stats.projectCount = overview["activeProjects"] as? Int
-            stats.watchHours = (overview["viewsLast7d"] as? Int).map { Double($0) / 60.0 }
-        }
-        if let analytics = json["analytics"] as? [String: Any],
-           let revenue = analytics["revenue"] as? [String: Any] {
-            stats.revenueZar = revenue["totalRand"] as? Double ?? revenue["revenue"] as? Double
-            stats.catalogueCount = analytics["contentCount"] as? Int
-        }
-
-        return CommandCenterPayload(
-            range: "month",
-            stats: stats,
-            recentProjects: nil,
-            calendarEvents: nil,
-            revenue: nil,
-            ecosystem: nil
-        )
-    }
-
-    private func loadCalendar() async throws -> [CalendarEvent] {
-        do {
-            let response: CalendarEventsResponse = try await client.get("/api/creator/command-center/calendar")
-            return response.events ?? []
+            let (c, cal, projs) = try await (center, calendar, projectList)
+            response = c
+            calendarEvents = cal
+            projects = projs.projects
+            state = .loaded
         } catch {
-            return []
+            state = .error(mapError(error, auth: auth))
         }
     }
 
-    private func loadRecentProjectsFallback() async throws -> [CreatorProject] {
+    func loadCalendar(month: Date) async {
+        let monthKey = DateParser.monthKey(month)
         do {
-            let response: ProjectsResponse = try await client.get("/api/creator/projects")
-            return Array((response.projects).prefix(6))
+            let payload: CommandCenterCalendarPayload = try await client.get(
+                "/api/creator/command-center/calendar",
+                query: [URLQueryItem(name: "month", value: monthKey)]
+            )
+            calendarEvents = payload.events ?? []
         } catch {
-            return []
+            // keep existing events on failure
         }
     }
 
-    private static func mapError(_ error: Error, auth: AuthService) -> String {
+    private func mapError(_ error: Error, auth: AuthService) -> String {
         if let api = error as? APIError, case .unauthorized = api {
             Task { await auth.signOut() }
             return api.errorDescription ?? "Please sign in again."

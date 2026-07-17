@@ -181,14 +181,14 @@ struct APIClient {
                         if line.hasPrefix("data:") {
                             let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
                             if payload == "[DONE]" { break }
-                            if let chunk = Self.parseSSEText(payload) {
-                                continuation.yield(chunk)
-                            } else if !payload.isEmpty {
-                                continuation.yield(payload)
-                            }
-                        } else if !line.isEmpty && !line.hasPrefix(":") && !line.hasPrefix("event:") {
-                            buffer += line
-                            continuation.yield(line)
+                        if let chunk = Self.parseSSEText(payload) {
+                            continuation.yield(ModocStreamParser.extractText(from: chunk))
+                        } else if !payload.isEmpty {
+                            continuation.yield(ModocStreamParser.extractText(from: payload))
+                        }
+                    } else if !line.isEmpty && !line.hasPrefix(":") && !line.hasPrefix("event:") {
+                        buffer += line
+                        continuation.yield(ModocStreamParser.extractText(from: line))
                         }
                     }
                     continuation.finish()

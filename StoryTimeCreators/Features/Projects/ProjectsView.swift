@@ -211,6 +211,21 @@ struct ProjectWorkspaceView: View {
                     }
                 }
 
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                    if let type = project.type {
+                        StatTile(title: "Type", value: type, icon: "film.fill")
+                    }
+                    if let genre = project.genre {
+                        StatTile(title: "Genre", value: genre, icon: "sparkles")
+                    }
+                    if let ideas = project.ideasCount {
+                        StatTile(title: "Ideas", value: "\(ideas)", icon: "lightbulb.fill")
+                    }
+                    if let budget = project.budget, budget > 0 {
+                        StatTile(title: "Budget", value: String(format: "R%.0f", budget), icon: "dollarsign.circle.fill")
+                    }
+                }
+
                 SectionHeader(title: "\(phase.title) Tools", trailing: "\(tools.count)")
                 ForEach(tools) { tool in
                     ToolCard(

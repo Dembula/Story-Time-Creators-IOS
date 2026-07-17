@@ -7,57 +7,65 @@ struct ProjectToolDetailView: View {
     let projectId: String
     let tool: ProjectTool
 
-    @StateObject private var vm: ProjectToolDetailViewModel
+    @StateObject private var vm: ProjectToolReportViewModel
 
     init(projectId: String, tool: ProjectTool) {
         self.projectId = projectId
         self.tool = tool
-        _vm = StateObject(wrappedValue: ProjectToolDetailViewModel(projectId: projectId, tool: tool))
+        _vm = StateObject(wrappedValue: ProjectToolReportViewModel(projectId: projectId, tool: tool))
     }
 
     var body: some View {
         VStack(spacing: 0) {
             header
             Group {
-                switch vm.state {
-                case .loading where vm.isDisplayLoading:
+                if vm.isLoading && vm.rows.isEmpty {
                     LoadingStateView(message: "Loading \(tool.label)…")
-                case .error(let message) where vm.isDisplayLoading:
-                    ErrorStateView(message: message, retry: { Task { await vm.load(auth: auth) } })
-                default:
+                } else if let error = vm.errorMessage, vm.rows.isEmpty {
+                    ErrorStateView(message: error, retry: { Task { await vm.load(auth: auth) } })
+                } else {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 16) {
                             if tool == .scriptReview {
-                                NoPayBanner(
-                                    text: "Executive paid script review is disabled in the Creators app. You can view your notes below; paid review checkout is not available on iOS."
+                                NoPayBanner(text: "Executive paid script review is disabled on iOS. Internal notes and history still appear below.")
+                            }
+
+                            summaryCard
+
+                            SectionHeader(
+                                title: "Updates & activity",
+                                trailing: "\(vm.rows.count)"
+                            )
+
+                            if vm.rows.isEmpty {
+                                EmptyStateView(
+                                    title: "No activity yet",
+                                    subtitle: "Edits, submissions, and team actions will appear here as your team uses this tool on the web studio.",
+                                    systemImage: "clock.arrow.circlepath"
                                 )
-                            }
-
-                            toolContent
-
-                            if !vm.isDisplayLoading {
-                                Button {
-                                    Task { await vm.markInProgress(auth: auth) }
-                                } label: {
-                                    HStack {
-                                        if vm.isMarkingProgress {
-                                            ProgressView().tint(.black)
-                                        }
-                                        Text("Mark in progress")
-                                            .font(STFont.body(15, weight: .semibold))
-                                    }
-                                    .foregroundStyle(.black)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 12)
-                                    .background(Capsule().fill(STColor.brandGradient))
+                            } else {
+                                ForEach(vm.rows) { row in
+                                    activityRow(row)
                                 }
-                                .disabled(vm.isMarkingProgress)
                             }
 
-                            if let progressMessage = vm.progressMessage {
-                                Text(progressMessage)
-                                    .font(STFont.body(12))
-                                    .foregroundStyle(STColor.success)
+                            Button {
+                                Task { await vm.markInProgress(auth: auth) }
+                            } label: {
+                                HStack {
+                                    if vm.isMarkingProgress { ProgressView().tint(.black) }
+                                    Text("Mark in progress")
+                                        .font(STFont.body(15, weight: .semibold))
+                                }
+                                .foregroundStyle(.black)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Capsule().fill(STColor.brandGradient))
+                            }
+                            .disabled(vm.isMarkingProgress)
+
+                            if let msg = vm.progressMessage {
+                                Text(msg).font(STFont.body(12)).foregroundStyle(STColor.success)
                             }
                         }
                         .padding(16)
@@ -85,187 +93,73 @@ struct ProjectToolDetailView: View {
                 .font(STFont.display(16, weight: .semibold))
                 .foregroundStyle(STColor.textPrimary)
             Spacer()
-            Button {
-                Task { await vm.load(auth: auth) }
-            } label: {
-                Image(systemName: "arrow.clockwise")
-                    .foregroundStyle(STColor.textSecondary)
+            Button { Task { await vm.load(auth: auth) } } label: {
+                Image(systemName: "arrow.clockwise").foregroundStyle(STColor.textSecondary)
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(STColor.border).frame(height: 1)
-        }
+        .overlay(alignment: .bottom) { Rectangle().fill(STColor.border).frame(height: 1) }
     }
 
-    @ViewBuilder
-    private var toolContent: some View {
-        switch vm.displayMode {
-        case .ideas(let response):
-            if let ideas = response.ideas, !ideas.isEmpty {
-                ForEach(ideas) { idea in
-                    contentCard(title: idea.title ?? "Idea", body: idea.summary ?? idea.notes)
-                }
-            } else {
-                connectedFallback
-            }
-
-        case .script(let response):
-            if let script = response.script {
-                contentCard(title: script.title ?? "Script", body: script.text)
-            } else if let versions = response.versions, !versions.isEmpty {
-                ForEach(versions) { version in
-                    contentCard(title: version.label ?? "Version", body: version.createdAt)
-                }
-            } else {
-                connectedFallback
-            }
-
-        case .budget(let response):
-            if let total = response.total {
-                StatTile(title: "Total Budget", value: formatMoney(total, currency: response.currency), icon: "dollarsign.circle.fill")
-            }
-            if let lines = response.lines {
-                ForEach(lines) { line in
-                    contentCard(
-                        title: line.category ?? "Line item",
-                        body: [line.description, line.amount.map { formatMoney($0, currency: response.currency) }]
-                            .compactMap { $0 }
-                            .joined(separator: " · ")
-                    )
-                }
-            }
-
-        case .schedule(let response):
-            if let days = response.days, !days.isEmpty {
-                ForEach(days) { day in
-                    contentCard(
-                        title: day.date ?? "Shoot day",
-                        body: [day.location, day.callTime, day.notes].compactMap { $0 }.joined(separator: " · ")
-                    )
-                }
-            } else {
-                connectedFallback
-            }
-
-        case .casting(let response):
-            if let roles = response.roles, !roles.isEmpty {
-                ForEach(roles) { role in
-                    contentCard(
-                        title: role.name,
-                        body: [role.importance, role.status, role.description].compactMap { $0 }.joined(separator: " · ")
-                    )
-                }
-            } else {
-                connectedFallback
-            }
-
-        case .scriptReview(let response):
-            let noteBody = response.notes?.body ?? response.notes?.text ?? ""
-            if !noteBody.isEmpty {
-                contentCard(title: "Your notes", body: noteBody)
-            }
-            if let requests = response.requests, !requests.isEmpty {
-                SectionHeader(title: "Review history")
-                ForEach(Array(requests.enumerated()), id: \.offset) { _, request in
-                    contentCard(title: request.status ?? "Request", body: request.submittedAt)
-                }
-            } else if noteBody.isEmpty {
-                connectedFallback
-            }
-
-        case .summary(let lines):
-            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                Text(line)
-                    .font(STFont.body(13))
-                    .foregroundStyle(STColor.textSecondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(12)
-                    .glassPanel()
-            }
-
-        case .connected:
-            connectedFallback
-
-        case .loading:
-            EmptyView()
-        }
-    }
-
-    private var connectedFallback: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "link.circle.fill")
-                .font(.system(size: 32))
-                .foregroundStyle(STColor.primary)
-            Text("Connected to API")
-                .font(STFont.display(17, weight: .semibold))
-                .foregroundStyle(STColor.textPrimary)
-            Text("Pull to refresh or tap the refresh button to reload this tool.")
-                .font(STFont.body(13))
-                .foregroundStyle(STColor.textSecondary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
-        .glassPanel()
-    }
-
-    private func contentCard(title: String, body: String?) -> some View {
+    private var summaryCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title)
-                .font(STFont.body(15, weight: .semibold))
-                .foregroundStyle(STColor.textPrimary)
-            if let body, !body.isEmpty {
-                Text(body)
-                    .font(STFont.body(13))
-                    .foregroundStyle(STColor.textSecondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+            Text("Tool report")
+                .font(STFont.body(12, weight: .semibold))
+                .foregroundStyle(STColor.textMuted)
+            Text(vm.summaryText)
+                .font(STFont.body(14))
+                .foregroundStyle(STColor.textSecondary)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassPanel()
     }
 
-    private func formatMoney(_ amount: Double, currency: String?) -> String {
-        let symbol = (currency ?? "ZAR").uppercased() == "ZAR" ? "R" : (currency ?? "")
-        return "\(symbol)\(String(format: "%.2f", amount))"
+    private func activityRow(_ row: ToolActivityRow) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: row.icon)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(STColor.primary)
+                .frame(width: 36, height: 36)
+                .background(RoundedRectangle(cornerRadius: 10).fill(STColor.primary.opacity(0.12)))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(row.title)
+                    .font(STFont.body(14, weight: .semibold))
+                    .foregroundStyle(STColor.textPrimary)
+                if let detail = row.detail, !detail.isEmpty {
+                    Text(detail)
+                        .font(STFont.body(13))
+                        .foregroundStyle(STColor.textSecondary)
+                        .lineLimit(4)
+                }
+                HStack(spacing: 8) {
+                    if let actor = row.actorName {
+                        Label(actor, systemImage: "person.fill")
+                    }
+                    if let ts = row.timestamp {
+                        Label(ts, systemImage: "clock")
+                    }
+                }
+                .font(STFont.body(10))
+                .foregroundStyle(STColor.textMuted)
+            }
+            Spacer()
+        }
+        .padding(12)
+        .glassPanel()
     }
 }
 
-// MARK: - View Model
-
 @MainActor
-final class ProjectToolDetailViewModel: ObservableObject {
-    enum DisplayMode {
-        case loading
-        case ideas(ProjectIdeasResponse)
-        case script(ProjectScriptResponse)
-        case budget(BudgetResponse)
-        case schedule(ScheduleResponse)
-        case casting(CastingRolesResponse)
-        case scriptReview(ScriptReviewAPIResponse)
-        case summary([String])
-        case connected
-    }
-
-    enum LoadState: Equatable {
-        case idle
-        case loading
-        case loaded
-        case error(String)
-    }
-
-    @Published private(set) var displayMode: DisplayMode = .loading
-    @Published private(set) var state: LoadState = .idle
+final class ProjectToolReportViewModel: ObservableObject {
+    @Published private(set) var rows: [ToolActivityRow] = []
+    @Published private(set) var summaryText = "Connected to your project workspace."
+    @Published private(set) var isLoading = false
     @Published var isMarkingProgress = false
     @Published var progressMessage: String?
-
-    var isDisplayLoading: Bool {
-        if case .loading = displayMode { return true }
-        return false
-    }
+    @Published var errorMessage: String?
 
     let projectId: String
     let tool: ProjectTool
@@ -277,41 +171,43 @@ final class ProjectToolDetailViewModel: ObservableObject {
     }
 
     func load(auth: AuthService) async {
-        state = .loading
-        displayMode = .loading
-        progressMessage = nil
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
 
-        let path = "/api/creator/projects/\(projectId)/\(tool.apiPathSegment)"
+        let toolPath = "/api/creator/projects/\(projectId)/\(tool.apiPathSegment)"
+        var combined: [ToolActivityRow] = []
 
-        do {
-            if tool == .ideaDevelopment, let response: ProjectIdeasResponse = try? await client.get(path) {
-                displayMode = .ideas(response)
-            } else if tool == .scriptWriting, let response: ProjectScriptResponse = try? await client.get(path) {
-                displayMode = .script(response)
-            } else if tool == .budgetBuilder, let response: BudgetResponse = try? await client.get(path) {
-                displayMode = .budget(response)
-            } else if tool == .productionScheduling, let response: ScheduleResponse = try? await client.get(path) {
-                displayMode = .schedule(response)
-            } else if tool == .castingPortal, let response: CastingRolesResponse = try? await client.get(path) {
-                displayMode = .casting(response)
-            } else if tool == .scriptReview, let response: ScriptReviewAPIResponse = try? await client.get(path) {
-                displayMode = .scriptReview(response)
-            } else if let summary = try await fetchSummary(path: path) {
-                displayMode = .summary(summary)
-            } else {
-                _ = try await client.get(path) as EmptyResponse
-                displayMode = .connected
-            }
-            state = .loaded
-        } catch {
-            if let summary = try? await fetchSummary(path: path) {
-                displayMode = .summary(summary)
-                state = .loaded
-            } else {
-                state = .error(Self.mapError(error, auth: auth))
-                displayMode = .connected
+        if let url = client.url(toolPath) {
+            do {
+                let (data, response) = try await client.session.data(from: url)
+                if let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
+                    combined += ToolReportBuilder.build(projectId: projectId, tool: tool, json: data)
+                    summaryText = "Latest data from \(tool.label)."
+                }
+            } catch {
+                errorMessage = error.localizedDescription
             }
         }
+
+        if let workspace: ProductionWorkspaceResponse = try? await client.get(
+            "/api/creator/projects/\(projectId)/production-workspace"
+        ) {
+            let activity = ToolReportBuilder.merge(activity: workspace.activityFeed ?? [], tool: tool)
+            combined = mergeRows(combined + activity)
+            if let summary = workspace.taskSummary {
+                let open = summary["OPEN"] ?? summary["IN_PROGRESS"] ?? 0
+                summaryText += " · \(open) open workspace tasks."
+            }
+        }
+
+        if combined.isEmpty {
+            summaryText = "No recorded updates yet for \(tool.label). Start working in this tool on web or mark progress below."
+        } else {
+            combined.sort { ($0.timestamp ?? "") > ($1.timestamp ?? "") }
+        }
+
+        rows = combined
     }
 
     func markInProgress(auth: AuthService) async {
@@ -319,99 +215,30 @@ final class ProjectToolDetailViewModel: ObservableObject {
         progressMessage = nil
         defer { isMarkingProgress = false }
 
-        let body = ToolProgressBody(
-            phase: tool.phase.rawValue,
-            toolId: tool.rawValue,
-            status: "IN_PROGRESS",
-            percent: 50
-        )
+        struct Body: Encodable {
+            var phase: String
+            var toolId: String
+            var status: String
+            var percent: Double
+        }
 
         do {
             _ = try await client.patch(
                 "/api/creator/projects/\(projectId)/tools/progress",
-                body: body
-            ) as ToolProgressPatchResponse
+                body: Body(phase: tool.phase.rawValue, toolId: tool.rawValue, status: "IN_PROGRESS", percent: 50)
+            ) as OkResponse
             progressMessage = "Marked \(tool.label) as in progress."
         } catch {
-            progressMessage = Self.mapError(error, auth: auth)
+            progressMessage = error.localizedDescription
         }
     }
 
-    private func fetchSummary(path: String) async throws -> [String]? {
-        guard let url = client.url(path) else { return nil }
-        let (data, response) = try await client.session.data(from: url)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            return nil
+    private func mergeRows(_ input: [ToolActivityRow]) -> [ToolActivityRow] {
+        var seen = Set<String>()
+        var out: [ToolActivityRow] = []
+        for row in input {
+            if seen.insert(row.id).inserted { out.append(row) }
         }
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
-        }
-        let lines = Self.flattenJSON(json, prefix: "", limit: 24)
-        return lines.isEmpty ? nil : lines
+        return out
     }
-
-    private static func flattenJSON(_ object: Any, prefix: String, limit: Int) -> [String] {
-        var lines: [String] = []
-        func walk(_ value: Any, key: String) {
-            guard lines.count < limit else { return }
-            switch value {
-            case let dict as [String: Any]:
-                if dict.isEmpty {
-                    lines.append("\(key): {}")
-                } else {
-                    for (childKey, child) in dict.sorted(by: { $0.key < $1.key }) {
-                        walk(child, key: key.isEmpty ? childKey : "\(key).\(childKey)")
-                    }
-                }
-            case let array as [Any]:
-                lines.append("\(key): [\(array.count) items]")
-            case let string as String:
-                lines.append("\(key): \(string)")
-            case let number as NSNumber:
-                lines.append("\(key): \(number)")
-            case is NSNull:
-                lines.append("\(key): null")
-            default:
-                lines.append("\(key): \(String(describing: value))")
-            }
-        }
-        walk(object, key: prefix)
-        return lines
-    }
-
-    private static func mapError(_ error: Error, auth: AuthService) -> String {
-        if let api = error as? APIError, case .unauthorized = api {
-            Task { await auth.signOut() }
-            return api.errorDescription ?? "Please sign in again."
-        }
-        return (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-    }
-}
-
-// MARK: - API Types
-
-private struct ToolProgressBody: Encodable {
-    var phase: String
-    var toolId: String
-    var status: String
-    var percent: Double
-}
-
-private struct ToolProgressPatchResponse: Decodable {
-    var progress: ToolProgress?
-}
-
-struct ScriptReviewAPIResponse: Decodable {
-    var notes: ScriptReviewNotes?
-    var requests: [ScriptReviewRequestItem]?
-}
-
-struct ScriptReviewNotes: Decodable {
-    var body: String?
-    var text: String?
-}
-
-struct ScriptReviewRequestItem: Decodable {
-    var status: String?
-    var submittedAt: String?
 }

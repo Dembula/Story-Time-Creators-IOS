@@ -15,6 +15,7 @@ struct CreatorUser: Codable, Identifiable, Equatable {
     var professionalName: String?
     var phoneNumber: String?
     var platformRoles: [String]?
+    var reputationScore: Double?
     var multiRole: Bool?
 
     var displayName: String {

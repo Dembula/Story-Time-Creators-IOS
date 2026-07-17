@@ -1,131 +1,155 @@
 import SwiftUI
 
+private enum MessagesTab: String, CaseIterable, Identifiable {
+    case network = "Network"
+    case inbox = "Inbox"
+    var id: String { rawValue }
+}
+
 struct MessagesView: View {
     @EnvironmentObject private var auth: AuthService
-    @StateObject private var vm = MessagesViewModel()
+    @StateObject private var vm = MessagesHubViewModel()
+    @State private var tab: MessagesTab = .network
     @State private var draft = ""
 
     var body: some View {
-        HStack(spacing: 0) {
-            threadList
-                .frame(maxWidth: vm.selectedThread == nil ? .infinity : 280)
+        VStack(spacing: 0) {
+            Picker("Messages", selection: $tab) {
+                ForEach(MessagesTab.allCases) { t in
+                    Text(t.rawValue).tag(t)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(16)
 
-            if let thread = vm.selectedThread {
-                conversationPane(thread)
-            } else if !vm.threads.isEmpty {
-                EmptyStateView(
-                    title: "Select a thread",
-                    subtitle: "Choose a conversation to read and reply.",
-                    systemImage: "bubble.left.and.bubble.right"
-                )
-                .frame(maxWidth: .infinity)
+            if tab == .network {
+                networkPane
+            } else {
+                inboxPane
             }
         }
         .background(STColor.background)
-        .task { await vm.load(auth: auth) }
-        .refreshable { await vm.load(auth: auth) }
+        .task { await vm.loadAll(auth: auth) }
+        .refreshable { await vm.loadAll(auth: auth) }
+        .onChange(of: vm.selectedNetworkPeerId) { _, peer in
+            if let peer { Task { await vm.loadNetworkThread(peerId: peer, auth: auth) } }
+        }
+        .onChange(of: vm.selectedInboxPeerId) { _, peer in
+            if let peer { Task { await vm.loadInboxThread(peerId: peer, auth: auth) } }
+        }
     }
 
-    private var threadList: some View {
-        Group {
-            switch vm.state {
-            case .loading where vm.threads.isEmpty:
-                LoadingStateView(message: "Loading messages…")
-            case .error(let message) where vm.threads.isEmpty:
-                ErrorStateView(message: message, retry: { Task { await vm.load(auth: auth) } })
-            default:
-                VStack(alignment: .leading, spacing: 0) {
-                    SectionHeader(title: "Inbox", trailing: "\(vm.threads.count)")
-                        .padding(16)
+    private var networkPane: some View {
+        HStack(spacing: 0) {
+            ScrollView {
+                LazyVStack(spacing: 8) {
+                    ForEach(vm.networkConversations) { conv in
+                        let peer = conv.participants?.first
+                        Button {
+                            vm.selectedNetworkPeerId = peer?.id
+                        } label: {
+                            threadRow(
+                                title: peer?.label ?? "Creator",
+                                preview: conv.lastMessage?.body ?? "No messages yet",
+                                selected: vm.selectedNetworkPeerId == peer?.id
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(12)
+            }
+            .frame(maxWidth: vm.selectedNetworkPeerId == nil ? .infinity : 280)
+            .overlay(alignment: .trailing) { Rectangle().fill(STColor.border).frame(width: 1) }
 
-                    if vm.threads.isEmpty {
-                        EmptyStateView(
-                            title: "No messages",
-                            subtitle: "Marketplace and direct messages appear here.",
-                            systemImage: "tray"
-                        )
-                    } else {
-                        ScrollView {
-                            LazyVStack(spacing: 8) {
-                                ForEach(vm.threads) { thread in
-                                    threadRow(thread)
-                                }
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.bottom, 16)
+            if vm.selectedNetworkPeerId != nil {
+                conversationColumn(
+                    title: vm.selectedNetworkTitle,
+                    empty: vm.networkMessages.isEmpty,
+                    bubbles: vm.networkMessages.map { ($0.body ?? "", $0.sender?.id == auth.currentUser?.id, $0.sender?.label) },
+                    onSend: {
+                        let text = draft
+                        draft = ""
+                        if let peer = vm.selectedNetworkPeerId {
+                            Task { await vm.sendNetwork(peerId: peer, body: text, auth: auth) }
                         }
                     }
-                }
+                )
+            } else {
+                EmptyStateView(title: "Network messages", subtitle: "Connect with creators to chat.", systemImage: "bubble.left.and.bubble.right")
+                    .frame(maxWidth: .infinity)
             }
-        }
-        .overlay(alignment: .trailing) {
-            Rectangle().fill(STColor.border).frame(width: 1)
         }
     }
 
-    private func threadRow(_ thread: MessageThread) -> some View {
-        Button {
-            Task { await vm.selectThread(thread, auth: auth) }
-        } label: {
-            HStack(alignment: .top, spacing: 10) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(thread.counterpartName ?? thread.subject ?? "Conversation")
-                        .font(STFont.body(14, weight: .semibold))
-                        .foregroundStyle(STColor.textPrimary)
-                        .lineLimit(1)
-                    if let preview = thread.preview, !preview.isEmpty {
-                        Text(preview)
-                            .font(STFont.body(12))
-                            .foregroundStyle(STColor.textSecondary)
-                            .lineLimit(2)
+    private var inboxPane: some View {
+        HStack(spacing: 0) {
+            ScrollView {
+                LazyVStack(spacing: 8) {
+                    ForEach(vm.inboxThreads) { thread in
+                        Button { vm.selectedInboxPeerId = thread.peerId } label: {
+                            threadRow(title: thread.title, preview: thread.preview, selected: vm.selectedInboxPeerId == thread.peerId)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
-                Spacer()
-                if let unread = thread.unreadCount, unread > 0 {
-                    Text("\(unread)")
-                        .font(STFont.mono(11, weight: .bold))
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3)
-                        .background(Capsule().fill(STColor.primary))
-                }
+                .padding(12)
             }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(vm.selectedThread?.id == thread.id ? STColor.primary.opacity(0.12) : STColor.surface)
-            )
+            .frame(maxWidth: vm.selectedInboxPeerId == nil ? .infinity : 280)
+            .overlay(alignment: .trailing) { Rectangle().fill(STColor.border).frame(width: 1) }
+
+            if vm.selectedInboxPeerId != nil {
+                conversationColumn(
+                    title: vm.selectedInboxTitle,
+                    empty: vm.inboxMessages.isEmpty,
+                    bubbles: vm.inboxMessages.map { ($0.body, $0.senderId == auth.currentUser?.id, $0.sender?.name) },
+                    onSend: {
+                        let text = draft
+                        draft = ""
+                        if let peer = vm.selectedInboxPeerId {
+                            Task { await vm.sendInbox(peerId: peer, body: text, auth: auth) }
+                        }
+                    }
+                )
+            } else {
+                EmptyStateView(title: "Marketplace inbox", subtitle: "Booking threads from cast, crew, locations, and catering.", systemImage: "tray")
+                    .frame(maxWidth: .infinity)
+            }
         }
-        .buttonStyle(.plain)
     }
 
-    private func conversationPane(_ thread: MessageThread) -> some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text(thread.counterpartName ?? thread.subject ?? "Messages")
-                    .font(STFont.display(16, weight: .semibold))
-                    .foregroundStyle(STColor.textPrimary)
-                Spacer()
-            }
-            .padding(16)
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(STColor.border).frame(height: 1)
-            }
+    private func threadRow(title: String, preview: String, selected: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(STFont.body(14, weight: .semibold)).foregroundStyle(STColor.textPrimary)
+            Text(preview).font(STFont.body(12)).foregroundStyle(STColor.textMuted).lineLimit(2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 14).fill(selected ? STColor.primary.opacity(0.14) : STColor.surface))
+    }
 
-            if vm.isLoadingMessages {
-                LoadingStateView(message: "Loading conversation…")
-            } else if vm.messages.isEmpty {
-                EmptyStateView(
-                    title: "No messages yet",
-                    subtitle: "Send the first message below.",
-                    systemImage: "bubble"
-                )
-                .frame(maxHeight: .infinity)
+    private func conversationColumn(
+        title: String,
+        empty: Bool,
+        bubbles: [(String, Bool, String?)],
+        onSend: @escaping () -> Void
+    ) -> some View {
+        VStack(spacing: 0) {
+            Text(title)
+                .font(STFont.display(16, weight: .semibold))
+                .foregroundStyle(STColor.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+                .overlay(alignment: .bottom) { Rectangle().fill(STColor.border).frame(height: 1) }
+
+            if empty {
+                EmptyStateView(title: "No messages yet", subtitle: "Say hello below.", systemImage: "bubble")
+                    .frame(maxHeight: .infinity)
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
-                        ForEach(vm.messages) { message in
-                            messageBubble(message)
+                        ForEach(Array(bubbles.enumerated()), id: \.offset) { _, bubble in
+                            messageBubble(text: bubble.0, mine: bubble.1, sender: bubble.2)
                         }
                     }
                     .padding(16)
@@ -135,303 +159,123 @@ struct MessagesView: View {
             HStack(spacing: 10) {
                 TextField("Message", text: $draft, axis: .vertical)
                     .lineLimit(1...4)
-                    .font(STFont.body(14))
                     .padding(10)
                     .background(RoundedRectangle(cornerRadius: 12).fill(STColor.surfaceElevated))
-
-                Button {
-                    let text = draft
-                    draft = ""
-                    Task { await vm.send(text: text, auth: auth) }
-                } label: {
+                Button(action: onSend) {
                     Image(systemName: "paperplane.fill")
                         .foregroundStyle(.black)
                         .padding(10)
                         .background(Circle().fill(STColor.brandGradient))
                 }
-                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || vm.isSending)
+                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
-            .padding(12)
-            .background(STColor.background)
-            .overlay(alignment: .top) {
-                Rectangle().fill(STColor.border).frame(height: 1)
-            }
+            .padding(16)
         }
         .frame(maxWidth: .infinity)
     }
 
-    private func messageBubble(_ message: ChatMessage) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if let name = message.senderName {
-                Text(name)
-                    .font(STFont.body(11, weight: .semibold))
-                    .foregroundStyle(STColor.textMuted)
+    private func messageBubble(text: String, mine: Bool, sender: String?) -> some View {
+        VStack(alignment: mine ? .trailing : .leading, spacing: 4) {
+            if !mine, let sender {
+                Text(sender).font(STFont.body(10, weight: .semibold)).foregroundStyle(STColor.textMuted)
             }
-            Text(message.text)
+            Text(text)
                 .font(STFont.body(14))
-                .foregroundStyle(STColor.textPrimary)
-            if let createdAt = message.createdAt {
-                Text(createdAt)
-                    .font(STFont.body(10))
-                    .foregroundStyle(STColor.textMuted)
-            }
+                .foregroundStyle(mine ? .black : STColor.textPrimary)
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(mine ? AnyShapeStyle(STColor.brandGradient) : AnyShapeStyle(STColor.surfaceElevated))
+                )
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .glassPanel()
+        .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
     }
+}
+
+struct InboxThreadRow: Identifiable, Hashable {
+    let peerId: String
+    let title: String
+    let preview: String
+    var id: String { peerId }
 }
 
 @MainActor
-private final class MessagesViewModel: ObservableObject {
-    enum LoadState: Equatable {
-        case idle
-        case loading
-        case loaded
-        case error(String)
+private final class MessagesHubViewModel: ObservableObject {
+    @Published var networkConversations: [NetworkConversation] = []
+    @Published var networkMessages: [NetworkChatMessage] = []
+    @Published var inboxThreads: [InboxThreadRow] = []
+    @Published var inboxMessages: [MarketplaceMessage] = []
+    @Published var selectedNetworkPeerId: String?
+    @Published var selectedInboxPeerId: String?
+
+    var selectedNetworkTitle: String {
+        networkConversations
+            .first(where: { $0.participants?.contains(where: { $0.id == selectedNetworkPeerId }) == true })?
+            .participants?.first?.label ?? "Chat"
     }
 
-    @Published private(set) var threads: [MessageThread] = []
-    @Published private(set) var messages: [ChatMessage] = []
-    @Published private(set) var selectedThread: MessageThread?
-    @Published private(set) var state: LoadState = .idle
-    @Published var isLoadingMessages = false
-    @Published var isSending = false
+    var selectedInboxTitle: String {
+        inboxThreads.first(where: { $0.peerId == selectedInboxPeerId })?.title ?? "Messages"
+    }
 
     private let client = APIClient.shared
-    private var threadContext: [String: String] = [:]
 
-    func load(auth: AuthService) async {
-        state = .loading
-        do {
-            if let response: MessagesResponse = try? await client.get("/api/messages"),
-               let threads = response.threads, !threads.isEmpty {
-                self.threads = threads
-                if let embedded = response.messages {
-                    messages = embedded
-                }
-            } else {
-                let raw = try await loadRawMessages()
-                threads = Self.buildThreads(from: raw, meId: auth.currentUser?.id)
-            }
-            state = .loaded
-        } catch {
-            state = .error(Self.mapError(error, auth: auth))
+    func loadAll(auth: AuthService) async {
+        if let chats: NetworkChatsResponse = try? await client.get("/api/network/chats") {
+            networkConversations = chats.conversations ?? []
+        }
+        if let messages: [MarketplaceMessage] = try? await client.get("/api/messages") {
+            inboxThreads = buildInboxThreads(from: messages, myId: auth.currentUser?.id)
         }
     }
 
-    func selectThread(_ thread: MessageThread, auth: AuthService) async {
-        selectedThread = thread
-        threadContext = thread.context
-        isLoadingMessages = true
-        defer { isLoadingMessages = false }
-
-        do {
-            messages = try await loadMessages(for: thread, auth: auth)
-        } catch {
-            messages = []
+    func loadNetworkThread(peerId: String, auth: AuthService) async {
+        if let thread: NetworkChatThreadResponse = try? await client.get("/api/network/chats/\(peerId)") {
+            networkMessages = thread.messages ?? []
         }
     }
 
-    func send(text: String, auth: AuthService) async {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, selectedThread != nil else { return }
-
-        isSending = true
-        defer { isSending = false }
-
-        var body = SendMessageBody(body: trimmed)
-        if let receiverId = threadContext["receiverId"] {
-            body.receiverId = receiverId
-        }
-        if let requestId = threadContext["requestId"] {
-            body.requestId = requestId
-        }
-        if let locationBookingId = threadContext["locationBookingId"] {
-            body.locationBookingId = locationBookingId
-        }
-        if let crewTeamRequestId = threadContext["crewTeamRequestId"] {
-            body.crewTeamRequestId = crewTeamRequestId
-        }
-        if let castingInquiryId = threadContext["castingInquiryId"] {
-            body.castingInquiryId = castingInquiryId
-        }
-        if let cateringBookingId = threadContext["cateringBookingId"] {
-            body.cateringBookingId = cateringBookingId
-        }
-
-        do {
-            let sent: ChatMessage = try await client.post("/api/messages", body: body)
-            messages.append(sent)
-            await load(auth: auth)
-        } catch {
-            _ = Self.mapError(error, auth: auth)
+    func loadInboxThread(peerId: String, auth: AuthService) async {
+        if let messages: [MarketplaceMessage] = try? await client.get(
+            "/api/messages",
+            query: [URLQueryItem(name: "peerId", value: peerId)]
+        ) {
+            inboxMessages = messages
         }
     }
 
-    private func loadRawMessages() async throws -> [RawMessage] {
-        guard let url = client.url("/api/messages") else { throw APIError.invalidURL }
-        let (data, response) = try await client.session.data(from: url)
-        guard let http = response as? HTTPURLResponse else { throw APIError.network("Invalid response.") }
-        if http.statusCode == 401 { throw APIError.unauthorized }
-        guard (200..<300).contains(http.statusCode) else {
-            throw APIError.http(http.statusCode, String(data: data, encoding: .utf8))
+    func sendNetwork(peerId: String, body: String, auth: AuthService) async {
+        guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        struct SendBody: Encodable { var body: String }
+        if let msg: NetworkChatMessage = try? await client.post("/api/network/chats/\(peerId)", body: SendBody(body: body)) {
+            networkMessages.append(msg)
         }
-        return (try? JSONDecoder().decode([RawMessage].self, from: data)) ?? []
     }
 
-    private func loadMessages(for thread: MessageThread, auth: AuthService) async throws -> [ChatMessage] {
-        var query: [URLQueryItem] = []
-        for (key, value) in thread.context {
-            query.append(URLQueryItem(name: key, value: value))
+    func sendInbox(peerId: String, body: String, auth: AuthService) async {
+        guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let payload = SendMarketplaceMessageBody(body: body, receiverId: peerId)
+        if let msg: MarketplaceMessage = try? await client.post("/api/messages", body: payload) {
+            inboxMessages.append(msg)
         }
-
-        if query.isEmpty, let peerId = thread.context["receiverId"] {
-            query = [URLQueryItem(name: "peerId", value: peerId)]
-        }
-
-        if !query.isEmpty {
-            let raw: [RawMessage] = try await client.get("/api/messages", query: query)
-            return raw.map(\.asChatMessage)
-        }
-
-        return messages.filter { _ in thread.id == selectedThread?.id }
     }
 
-    private static func buildThreads(from messages: [RawMessage], meId: String?) -> [MessageThread] {
-        guard !messages.isEmpty else { return [] }
-
-        var grouped: [String: [RawMessage]] = [:]
-        for message in messages {
-            let key: String
-            if let requestId = message.requestId {
-                key = "request:\(requestId)"
-            } else if let bookingId = message.locationBookingId {
-                key = "location:\(bookingId)"
-            } else if let crewId = message.crewTeamRequestId {
-                key = "crew:\(crewId)"
-            } else if let castingId = message.castingInquiryId {
-                key = "casting:\(castingId)"
-            } else if let cateringId = message.cateringBookingId {
-                key = "catering:\(cateringId)"
-            } else if let peer = message.peerId(relativeTo: meId) {
-                key = "peer:\(peer)"
-            } else {
-                key = "msg:\(message.id)"
-            }
-            grouped[key, default: []].append(message)
-        }
-
-        return grouped.map { key, items in
-            let sorted = items.sorted { ($0.createdAt ?? "") < ($1.createdAt ?? "") }
-            let latest = sorted.last
-            let counterpart = latest?.counterpartName(relativeTo: meId) ?? "Conversation"
-            return MessageThread(
-                id: key,
-                subject: latest?.threadSubject,
-                preview: latest?.body,
-                updatedAt: latest?.createdAt,
-                unreadCount: nil,
-                counterpartName: counterpart
+    private func buildInboxThreads(from messages: [MarketplaceMessage], myId: String?) -> [InboxThreadRow] {
+        guard let myId else { return [] }
+        var map: [String: InboxThreadRow] = [:]
+        for msg in messages {
+            let peer = msg.senderId == myId ? msg.receiverId : msg.senderId
+            let name = msg.senderId == myId ? msg.receiver?.name : msg.sender?.name
+            let context = msg.locationBooking?.location?.name
+                ?? msg.crewTeamRequest?.crewTeam?.companyName
+                ?? msg.castingInquiry?.agency?.agencyName
+                ?? msg.request?.equipment?.companyName
+            map[peer] = InboxThreadRow(
+                peerId: peer,
+                title: name ?? context ?? "Conversation",
+                preview: msg.body
             )
         }
-        .sorted { ($0.updatedAt ?? "") > ($1.updatedAt ?? "") }
-    }
-
-    private static func mapError(_ error: Error, auth: AuthService) -> String {
-        if let api = error as? APIError, case .unauthorized = api {
-            Task { await auth.signOut() }
-            return api.errorDescription ?? "Please sign in again."
-        }
-        return (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-    }
-}
-
-// MARK: - Message API Types
-
-private struct RawMessage: Decodable {
-    let id: String
-    var body: String?
-    var createdAt: String?
-    var senderId: String?
-    var receiverId: String?
-    var requestId: String?
-    var locationBookingId: String?
-    var crewTeamRequestId: String?
-    var castingInquiryId: String?
-    var cateringBookingId: String?
-    var sender: RawSender?
-    var receiver: RawSender?
-
-    var asChatMessage: ChatMessage {
-        ChatMessage(
-            id: id,
-            body: body,
-            content: nil,
-            createdAt: createdAt,
-            senderId: senderId,
-            senderName: sender?.name
-        )
-    }
-
-    func peerId(relativeTo meId: String?) -> String? {
-        guard let meId else { return receiverId ?? senderId }
-        if senderId == meId { return receiverId }
-        if receiverId == meId { return senderId }
-        return receiverId ?? senderId
-    }
-
-    func counterpartName(relativeTo meId: String?) -> String? {
-        guard let meId else { return sender?.name ?? receiver?.name }
-        if senderId == meId { return receiver?.name }
-        if receiverId == meId { return sender?.name }
-        return sender?.name ?? receiver?.name
-    }
-
-    var threadSubject: String? {
-        if requestId != nil { return "Equipment inquiry" }
-        if locationBookingId != nil { return "Location booking" }
-        if crewTeamRequestId != nil { return "Crew request" }
-        if castingInquiryId != nil { return "Casting inquiry" }
-        if cateringBookingId != nil { return "Catering booking" }
-        return nil
-    }
-}
-
-private struct RawSender: Decodable {
-    var name: String?
-}
-
-private struct SendMessageBody: Encodable {
-    var body: String
-    var receiverId: String?
-    var requestId: String?
-    var locationBookingId: String?
-    var crewTeamRequestId: String?
-    var castingInquiryId: String?
-    var cateringBookingId: String?
-}
-
-private extension MessageThread {
-    var context: [String: String] {
-        if id.hasPrefix("peer:") {
-            return ["receiverId": String(id.dropFirst(5))]
-        }
-        if id.hasPrefix("request:") {
-            return ["requestId": String(id.dropFirst(8))]
-        }
-        if id.hasPrefix("location:") {
-            return ["locationBookingId": String(id.dropFirst(9))]
-        }
-        if id.hasPrefix("crew:") {
-            return ["crewTeamRequestId": String(id.dropFirst(5))]
-        }
-        if id.hasPrefix("casting:") {
-            return ["castingInquiryId": String(id.dropFirst(8))]
-        }
-        if id.hasPrefix("catering:") {
-            return ["cateringBookingId": String(id.dropFirst(9))]
-        }
-        return [:]
+        return map.values.sorted { $0.title < $1.title }
     }
 }

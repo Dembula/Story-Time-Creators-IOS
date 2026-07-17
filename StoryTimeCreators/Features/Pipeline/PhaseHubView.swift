@@ -10,7 +10,7 @@ struct PhaseHubView: View {
     @State private var isLoading = true
     @State private var loadError: String?
 
-    private var tools: [ProjectTool] { ProjectTool.tools(for: phase) }
+    private var tools: [ProjectTool] { ProjectTool.hubTools(for: phase) }
 
     init(phase: ProjectPhase) {
         self.phase = phase

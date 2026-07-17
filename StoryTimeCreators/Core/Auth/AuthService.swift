@@ -15,6 +15,10 @@ final class AuthService: NSObject, ObservableObject {
     private let client = APIClient.shared
     private var webAuthSession: ASWebAuthenticationSession?
 
+    func applyProfile(_ user: CreatorUser) {
+        currentUser = user
+    }
+
     func restoreSession() async {
         do {
             let me: CreatorUser = try await client.get("/api/me")

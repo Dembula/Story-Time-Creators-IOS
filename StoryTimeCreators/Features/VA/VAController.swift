@@ -76,12 +76,16 @@ final class VAController: ObservableObject {
             let stream = try await APIClient.shared.streamChat(path: "/api/modoc/chat", body: body)
             for try await chunk in stream {
                 var current = messages[assistantIndex]
-                current.text += chunk
+                current.text += ModocStreamParser.extractText(from: chunk)
                 messages[assistantIndex] = current
             }
             if messages[assistantIndex].text.isEmpty {
                 var current = messages[assistantIndex]
                 current.text = "I'm here when you need help with your project."
+                messages[assistantIndex] = current
+            } else {
+                var current = messages[assistantIndex]
+                current.text = ModocStreamParser.cleanFullResponse(current.text)
                 messages[assistantIndex] = current
             }
         } catch {

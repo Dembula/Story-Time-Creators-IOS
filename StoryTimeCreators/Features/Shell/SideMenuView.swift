@@ -37,7 +37,6 @@ struct SideMenuView: View {
                     section("Catalogue", items: AppDestination.monetization)
                     menuRow(.originals, highlight: true)
                     section("Pipeline", items: AppDestination.pipeline)
-                    section("Tools", items: AppDestination.tools)
                 }
                 .padding(.horizontal, 12)
                 .padding(.bottom, 24)
