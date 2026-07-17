@@ -1,177 +1,227 @@
 import SwiftUI
 
+/// Native Creators splash — logo mark + typography (never full-bleed SplashScreen mock).
 struct SplashView: View {
     var onFinished: () -> Void
 
-    @State private var contentOpacity: Double = 0
-    @State private var contentScale: CGFloat = 1.06
-    @State private var meshPhase: CGFloat = 0
+    @State private var logoOpacity: Double = 0
+    @State private var logoScale: CGFloat = 0.86
+    @State private var logoY: CGFloat = 28
+    @State private var wordmarkOpacity: Double = 0
+    @State private var wordmarkY: CGFloat = 18
+    @State private var footerOpacity: Double = 0
     @State private var progress: CGFloat = 0
-    @State private var progressOpacity: Double = 0
-    @State private var sparkle = false
+    @State private var mesh = false
     @State private var exitOpacity: Double = 1
-    @State private var taglinePulse = false
+    @State private var didFinish = false
 
     var body: some View {
         GeometryReader { geo in
+            let barWidth = min(geo.size.width * 0.58, 248.0)
+
             ZStack {
-                // Base brand orange (letterboxed edges / safe areas)
-                LinearGradient(
-                    colors: [
-                        Color(red: 1.0, green: 0.52, blue: 0.10),
-                        Color(red: 0.96, green: 0.38, blue: 0.04),
-                        Color(red: 0.90, green: 0.28, blue: 0.02),
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-                .ignoresSafeArea()
+                orangeField
+                meshLayer
 
-                livingMesh
-                    .ignoresSafeArea()
+                VStack(spacing: 0) {
+                    Spacer(minLength: geo.size.height * 0.16)
 
-                // Exact uploaded splash art
-                Image("SplashScreen")
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: geo.size.width, height: geo.size.height)
-                    .clipped()
-                    .scaleEffect(contentScale)
-                    .opacity(contentOpacity)
-                    .overlay {
-                        // Soft vignette so edges blend into orange field
-                        LinearGradient(
-                            colors: [
-                                Color(red: 0.98, green: 0.45, blue: 0.08).opacity(0.15),
-                                .clear,
-                                Color(red: 0.92, green: 0.30, blue: 0.02).opacity(0.25),
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .allowsHitTesting(false)
+                    VStack(spacing: 8) {
+                        Image("SplashLogo")
+                            .resizable()
+                            .interpolation(.high)
+                            .scaledToFit()
+                            .frame(width: min(geo.size.width * 0.52, 220))
+                            // Soft edge so square asset blends into the field (no crop line)
+                            .mask(
+                                RoundedRectangle(cornerRadius: 36, style: .continuous)
+                                    .padding(2)
+                            )
+                            .scaleEffect(logoScale)
+                            .offset(y: logoY)
+                            .opacity(logoOpacity)
+                            .accessibilityHidden(true)
+
+                        VStack(spacing: 10) {
+                            Text("STORY TIME")
+                                .font(.system(size: 25, weight: .bold, design: .rounded))
+                                .tracking(5)
+                                .foregroundStyle(.white)
+
+                            Capsule()
+                                .fill(Color.white.opacity(0.45))
+                                .frame(width: 36, height: 1.5)
+
+                            Text("CREATORS")
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .tracking(6.5)
+                                .foregroundStyle(Color.white.opacity(0.88))
+                        }
+                        .offset(y: wordmarkY)
+                        .opacity(wordmarkOpacity)
                     }
 
-                // Animated comet loader over the mock’s bottom strip
-                VStack {
                     Spacer()
-                    VStack(spacing: 16) {
-                        ZStack(alignment: .leading) {
-                            Capsule()
-                                .fill(Color.white.opacity(0.18))
-                                .frame(height: 3)
 
-                            Capsule()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [
-                                            Color(red: 1, green: 0.7, blue: 0.2).opacity(0.15),
-                                            Color(red: 1, green: 0.88, blue: 0.45),
-                                            .white,
-                                        ],
-                                        startPoint: .leading,
-                                        endPoint: .trailing
-                                    )
-                                )
-                                .frame(width: max(10, progress * geo.size.width * 0.58), height: 3)
-                                .shadow(color: Color.white.opacity(0.75), radius: 8)
-
-                            Circle()
-                                .fill(
-                                    RadialGradient(
-                                        colors: [.white, Color(red: 1, green: 0.92, blue: 0.55), .clear],
-                                        center: .center,
-                                        startRadius: 0,
-                                        endRadius: 12
-                                    )
-                                )
-                                .frame(width: sparkle ? 16 : 12, height: sparkle ? 16 : 12)
-                                .offset(x: max(0, progress * geo.size.width * 0.58 - 8))
-                                .shadow(color: .white.opacity(0.95), radius: 10)
-                        }
-                        .frame(width: geo.size.width * 0.58)
-                        .opacity(progressOpacity)
+                    VStack(spacing: 18) {
+                        progressBar(width: barWidth)
 
                         Text("BUILDING STORIES TOGETHER...")
-                            .font(.system(size: 11, weight: .bold, design: .rounded))
-                            .tracking(3.4)
-                            .foregroundStyle(.white.opacity(taglinePulse ? 1 : 0.72))
-                            .opacity(progressOpacity)
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .tracking(3.0)
+                            .foregroundStyle(Color.white.opacity(0.95))
                     }
-                    .padding(.bottom, max(42, geo.safeAreaInsets.bottom + 28))
+                    .opacity(footerOpacity)
+                    .padding(.bottom, max(40, geo.safeAreaInsets.bottom + 28))
                 }
+                .frame(width: geo.size.width, height: geo.size.height)
             }
         }
         .ignoresSafeArea()
         .opacity(exitOpacity)
-        .onAppear { runSequence() }
+        .onAppear { startSequence() }
+        .onDisappear { didFinish = true }
     }
 
-    private var livingMesh: some View {
+    // MARK: - Layers
+
+    private var orangeField: some View {
+        LinearGradient(
+            colors: [
+                Color(red: 1.00, green: 0.62, blue: 0.18),
+                Color(red: 0.99, green: 0.48, blue: 0.08),
+                Color(red: 0.95, green: 0.36, blue: 0.04),
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .ignoresSafeArea()
+        .overlay {
+            RadialGradient(
+                colors: [
+                    Color.white.opacity(0.28),
+                    Color.clear,
+                ],
+                center: UnitPoint(x: 0.5, y: 0.38),
+                startRadius: 10,
+                endRadius: 340
+            )
+            .ignoresSafeArea()
+        }
+    }
+
+    private var meshLayer: some View {
         ZStack {
             Ellipse()
                 .fill(
                     RadialGradient(
                         colors: [Color.white.opacity(0.2), .clear],
                         center: .center,
-                        startRadius: 4,
-                        endRadius: 240
+                        startRadius: 8,
+                        endRadius: 200
                     )
                 )
-                .frame(width: 460, height: 300)
-                .offset(x: -60 + meshPhase * 40, y: -220)
-                .rotationEffect(.degrees(meshPhase * 10 - 12))
+                .frame(width: 400, height: 260)
+                .offset(x: mesh ? 24 : -40, y: -180)
                 .blur(radius: 2)
 
             Ellipse()
                 .fill(
                     RadialGradient(
-                        colors: [Color.white.opacity(0.14), .clear],
+                        colors: [Color.white.opacity(0.12), .clear],
                         center: .center,
-                        startRadius: 10,
-                        endRadius: 280
+                        startRadius: 12,
+                        endRadius: 240
                     )
                 )
-                .frame(width: 520, height: 340)
-                .offset(x: 90 - meshPhase * 36, y: 180)
-                .rotationEffect(.degrees(-meshPhase * 8 + 8))
+                .frame(width: 460, height: 300)
+                .offset(x: mesh ? -16 : 56, y: 180)
                 .blur(radius: 4)
         }
         .allowsHitTesting(false)
+        .ignoresSafeArea()
     }
 
-    private func runSequence() {
-        withAnimation(.easeInOut(duration: 5.0).repeatForever(autoreverses: true)) {
-            meshPhase = 1
+    private func progressBar(width: CGFloat) -> some View {
+        ZStack(alignment: .leading) {
+            Capsule()
+                .fill(Color.black.opacity(0.18))
+                .frame(width: width, height: 3)
+
+            Capsule()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 1, green: 0.72, blue: 0.25).opacity(0.2),
+                            Color(red: 1, green: 0.92, blue: 0.55),
+                            .white,
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .frame(width: max(8, progress * width), height: 3)
+                .shadow(color: .white.opacity(0.7), radius: 6)
+
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [.white, Color(red: 1, green: 0.92, blue: 0.55), .clear],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: 10
+                    )
+                )
+                .frame(width: 14, height: 14)
+                .offset(x: max(0, progress * width - 7))
+                .shadow(color: .white.opacity(0.95), radius: 8)
+        }
+        .frame(width: width, height: 14)
+    }
+
+    // MARK: - Motion
+
+    private func startSequence() {
+        guard !didFinish else { return }
+
+        withAnimation(.easeInOut(duration: 4.5).repeatForever(autoreverses: true)) {
+            mesh = true
         }
 
-        // Hero entrance — settle from slight zoom
-        withAnimation(.easeOut(duration: 0.85)) {
-            contentOpacity = 1
-            contentScale = 1
+        withAnimation(.spring(response: 0.72, dampingFraction: 0.82)) {
+            logoOpacity = 1
+            logoScale = 1
+            logoY = 0
         }
 
-        withAnimation(.easeOut(duration: 0.45).delay(0.55)) {
-            progressOpacity = 1
+        withAnimation(.easeOut(duration: 0.55).delay(0.2)) {
+            wordmarkOpacity = 1
+            wordmarkY = 0
         }
 
-        withAnimation(.easeInOut(duration: 0.85).repeatForever(autoreverses: true).delay(0.6)) {
-            sparkle = true
-            taglinePulse = true
+        withAnimation(.easeOut(duration: 0.45).delay(0.45)) {
+            footerOpacity = 1
         }
 
-        // Comet sweep
-        withAnimation(.easeInOut(duration: 2.05).delay(0.7)) {
+        withAnimation(.easeInOut(duration: 1.85).delay(0.5)) {
             progress = 1
         }
 
-        Task {
-            try? await Task.sleep(nanoseconds: 2_850_000_000)
-            withAnimation(.easeInOut(duration: 0.48)) {
-                exitOpacity = 0
-                contentScale = 1.04
-            }
-            try? await Task.sleep(nanoseconds: 480_000_000)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_450_000_000)
+            finish()
+        }
+    }
+
+    private func finish() {
+        guard !didFinish else { return }
+        didFinish = true
+        withAnimation(.easeInOut(duration: 0.38)) {
+            exitOpacity = 0
+            logoScale = 1.04
+        }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 380_000_000)
             onFinished()
         }
     }

@@ -360,6 +360,11 @@ final class AppRouter: ObservableObject {
     }
 
     func openTool(_ tool: ProjectTool, projectId: String?) {
+        // Project-scoped tools need a project — don't leave the hub empty.
+        if !tool.isMarketplaceStyle {
+            guard let projectId, !projectId.isEmpty else { return }
+        }
+
         toolReturnDestination = destination
         selectedTool = tool
         selectedProjectId = projectId ?? selectedProjectId
@@ -380,7 +385,6 @@ final class AppRouter: ObservableObject {
         case .distribution:
             destination = .upload
         default:
-            // Stay on the current screen (phase hub or projects); shell overlays the tool report.
             if let pid = selectedProjectId {
                 projectPath = [.overview(pid), .tool(pid, tool)]
             }

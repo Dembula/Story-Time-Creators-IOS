@@ -83,31 +83,44 @@ struct PhaseHubView: View {
            let project = projects.first(where: { $0.id == id }) {
             return project.title
         }
-        return "Select a project (optional)"
+        return "Select a project"
     }
 
     private var toolsGrid: some View {
         LazyVStack(spacing: 12) {
             ForEach(tools) { tool in
+                let needsProject = !tool.isMarketplaceStyle && selectedProjectId == nil
                 ToolCard(
                     title: tool.label,
                     subtitle: toolSubtitle(for: tool),
                     systemImage: tool.systemImage
                 ) {
-                    router.openTool(tool, projectId: selectedProjectId)
+                    openTool(tool)
                 }
+                .opacity(needsProject ? 0.45 : 1)
+                .allowsHitTesting(!needsProject)
             }
         }
     }
 
+    private func openTool(_ tool: ProjectTool) {
+        if !tool.isMarketplaceStyle && selectedProjectId == nil {
+            return
+        }
+        if let selectedProjectId {
+            router.selectedProjectId = selectedProjectId
+        }
+        router.openTool(tool, projectId: selectedProjectId)
+    }
+
     private func toolSubtitle(for tool: ProjectTool) -> String? {
-        if tool == .castingPortal || tool == .crewMarketplace || tool == .locationMarketplace {
-            return "Opens marketplace — browse & inquire without payment"
+        if tool.isMarketplaceStyle {
+            return "Browse & manage contacts — no payments"
         }
         if selectedProjectId != nil {
-            return "Opens in project context"
+            return "Opens activity report for this project"
         }
-        return "Select a project for full workspace access"
+        return "Select a project above to open this tool"
     }
 
     @MainActor
@@ -121,6 +134,9 @@ struct PhaseHubView: View {
             projects = response.projects
             if selectedProjectId == nil {
                 selectedProjectId = router.selectedProjectId ?? projects.first?.id
+            }
+            if let selectedProjectId {
+                router.selectedProjectId = selectedProjectId
             }
         } catch {
             projects = []

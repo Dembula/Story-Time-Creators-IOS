@@ -16,10 +16,12 @@ struct RootView: View {
                 }
             }
             .opacity(showSplash ? 0 : 1)
+            // Keep interactive only after splash so taps don't hit through
+            .allowsHitTesting(!showSplash)
 
             if showSplash {
                 SplashView {
-                    withAnimation(.easeInOut(duration: 0.4)) {
+                    withAnimation(.easeInOut(duration: 0.35)) {
                         showSplash = false
                     }
                 }
@@ -28,6 +30,7 @@ struct RootView: View {
             }
         }
         .task {
+            // Restore session in parallel with splash — splash owns its own timer
             await auth.restoreSession()
         }
     }
