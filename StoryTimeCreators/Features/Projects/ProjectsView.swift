@@ -9,11 +9,7 @@ struct ProjectsView: View {
     var body: some View {
         Group {
             if let projectId = router.selectedProjectId,
-               case .tool(let pid, let tool) = router.projectPath.last,
-               pid == projectId {
-                ProjectToolDetailView(projectId: pid, tool: tool)
-            } else if let projectId = router.selectedProjectId,
-                      let project = vm.project(withId: projectId) {
+               let project = vm.project(withId: projectId) {
                 ProjectWorkspaceView(
                     project: project,
                     onOpenTool: { tool in openTool(tool, projectId: projectId) },
@@ -139,10 +135,7 @@ struct ProjectsView: View {
     }
 
     private func openTool(_ tool: ProjectTool, projectId: String) {
-        router.selectedProjectId = projectId
-        router.selectedTool = tool
-        router.projectPath = [.overview(projectId), .tool(projectId, tool)]
-        router.destination = .projects
+        router.openTool(tool, projectId: projectId)
     }
 
     private func closeWorkspace() {

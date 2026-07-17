@@ -1,12 +1,18 @@
 import SwiftUI
 
+private struct CalendarDayItem: Identifiable {
+    let id: String
+    let date: Date?
+}
+
 struct CalendarGridView: View {
     let events: [CommandCenterCalendarEvent]
     @Binding var displayedMonth: Date
     var onSelectEvent: (CommandCenterCalendarEvent) -> Void
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
-    private let weekdaySymbols = Calendar.current.shortWeekdaySymbols
+    private let weekdaySymbols = Calendar.current.veryShortWeekdaySymbols
+    @State private var selectedDay: String?
 
     private var eventsByDay: [String: [CommandCenterCalendarEvent]] {
         Dictionary(grouping: events) { event in
@@ -20,8 +26,8 @@ struct CalendarGridView: View {
             monthHeader
             weekdayHeader
             LazyVGrid(columns: columns, spacing: 6) {
-                ForEach(daysInMonth(), id: \.self) { day in
-                    dayCell(day)
+                ForEach(dayItems()) { item in
+                    dayCell(item)
                 }
             }
             selectedDayEvents
@@ -50,8 +56,8 @@ struct CalendarGridView: View {
 
     private var weekdayHeader: some View {
         HStack {
-            ForEach(weekdaySymbols, id: \.self) { symbol in
-                Text(symbol.prefix(2).uppercased())
+            ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
+                Text(symbol.uppercased())
                     .font(STFont.body(10, weight: .semibold))
                     .foregroundStyle(STColor.textMuted)
                     .frame(maxWidth: .infinity)
@@ -59,43 +65,42 @@ struct CalendarGridView: View {
         }
     }
 
-    @State private var selectedDay: String?
-
-    private func dayCell(_ date: Date?) -> some View {
-        Group {
-            if let date {
-                let key = dayKey(date)
-                let dayEvents = eventsByDay[key] ?? []
-                let isSelected = selectedDay == key
-                Button {
-                    selectedDay = key
-                } label: {
-                    VStack(spacing: 4) {
-                        Text("\(Calendar.current.component(.day, from: date))")
-                            .font(STFont.body(13, weight: isToday(date) ? .bold : .medium))
-                            .foregroundStyle(isToday(date) ? STColor.accent : STColor.textPrimary)
-                        if !dayEvents.isEmpty {
-                            HStack(spacing: 2) {
-                                ForEach(0..<min(dayEvents.count, 3), id: \.self) { _ in
-                                    Circle()
-                                        .fill(STColor.primary)
-                                        .frame(width: 4, height: 4)
-                                }
+    @ViewBuilder
+    private func dayCell(_ item: CalendarDayItem) -> some View {
+        if let date = item.date {
+            let key = dayKey(date)
+            let dayEvents = eventsByDay[key] ?? []
+            let isSelected = selectedDay == key
+            Button {
+                selectedDay = key
+            } label: {
+                VStack(spacing: 4) {
+                    Text("\(Calendar.current.component(.day, from: date))")
+                        .font(STFont.body(13, weight: isToday(date) ? .bold : .medium))
+                        .foregroundStyle(isToday(date) ? STColor.accent : STColor.textPrimary)
+                    if !dayEvents.isEmpty {
+                        HStack(spacing: 2) {
+                            ForEach(0..<min(dayEvents.count, 3), id: \.self) { idx in
+                                Circle()
+                                    .fill(STColor.primary)
+                                    .frame(width: 4, height: 4)
+                                    .id("\(item.id)-dot-\(idx)")
                             }
-                        } else {
-                            Spacer().frame(height: 4)
                         }
+                    } else {
+                        Spacer().frame(height: 4)
                     }
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .fill(isSelected ? STColor.primary.opacity(0.18) : (isToday(date) ? STColor.surfaceElevated : .clear))
-                    )
                 }
-                .buttonStyle(.plain)
-            } else {
-                Color.clear.frame(height: 44)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(isSelected ? STColor.primary.opacity(0.18) : (isToday(date) ? STColor.surfaceElevated : .clear))
+                )
             }
+            .buttonStyle(.plain)
+        } else {
+            Color.clear
+                .frame(maxWidth: .infinity, minHeight: 44)
         }
     }
 
@@ -107,7 +112,7 @@ struct CalendarGridView: View {
                 Text(selectedDay == nil ? "This month" : "Selected day")
                     .font(STFont.body(12, weight: .semibold))
                     .foregroundStyle(STColor.textMuted)
-                ForEach(visible.prefix(8)) { event in
+                ForEach(Array(visible.prefix(8))) { event in
                     Button { onSelectEvent(event) } label: {
                         HStack(spacing: 10) {
                             Image(systemName: icon(for: event.kind))
@@ -147,20 +152,26 @@ struct CalendarGridView: View {
         }
     }
 
-    private func daysInMonth() -> [Date?] {
+    private func dayItems() -> [CalendarDayItem] {
         let cal = Calendar.current
         let start = cal.date(from: cal.dateComponents([.year, .month], from: displayedMonth))!
         let range = cal.range(of: .day, in: .month, for: start)!
         let firstWeekday = cal.component(.weekday, from: start)
         let leading = (firstWeekday - cal.firstWeekday + 7) % 7
-        var days: [Date?] = Array(repeating: nil, count: leading)
+        var items: [CalendarDayItem] = []
+        for i in 0..<leading {
+            items.append(CalendarDayItem(id: "pad-leading-\(i)", date: nil))
+        }
         for day in range {
             if let d = cal.date(byAdding: .day, value: day - 1, to: start) {
-                days.append(d)
+                items.append(CalendarDayItem(id: "day-\(dayKey(d))", date: d))
             }
         }
-        while days.count % 7 != 0 { days.append(nil) }
-        return days
+        let trailing = (7 - (items.count % 7)) % 7
+        for i in 0..<trailing {
+            items.append(CalendarDayItem(id: "pad-trailing-\(i)", date: nil))
+        }
+        return items
     }
 
     private func dayKey(_ date: Date) -> String {
@@ -175,7 +186,7 @@ struct CalendarGridView: View {
 
     private func eventsForMonth() -> [CommandCenterCalendarEvent] {
         let key = DateParser.monthKey(displayedMonth)
-        return events.filter { ($0.startAt.hasPrefix(key)) }
+        return events.filter { $0.startAt.hasPrefix(key) }
     }
 
     private func icon(for kind: String?) -> String {

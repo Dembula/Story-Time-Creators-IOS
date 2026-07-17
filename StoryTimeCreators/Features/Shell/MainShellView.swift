@@ -11,6 +11,9 @@ struct MainShellView: View {
 
             VStack(spacing: 0) {
                 topBar
+                if shouldShowToolReturn {
+                    ToolReturnBar()
+                }
                 content
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -53,6 +56,19 @@ struct MainShellView: View {
         )
     }
 
+    private var shouldShowToolReturn: Bool {
+        guard let origin = router.toolReturnDestination else { return false }
+        guard origin == .preProduction || origin == .production || origin == .postProduction else {
+            return false
+        }
+        switch router.destination {
+        case .cast, .crew, .locations, .equipment, .catering, .music, .upload:
+            return true
+        default:
+            return false
+        }
+    }
+
     private var topBar: some View {
         HStack(spacing: 14) {
             Button { router.toggleMenu() } label: {
@@ -64,7 +80,7 @@ struct MainShellView: View {
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(router.destination.title)
+                Text(router.isShowingProjectTool ? (router.selectedTool?.label ?? router.destination.title) : router.destination.title)
                     .font(STFont.display(18, weight: .semibold))
                     .foregroundStyle(STColor.textPrimary)
                 if let name = auth.currentUser?.displayName {
@@ -92,45 +108,51 @@ struct MainShellView: View {
 
     @ViewBuilder
     private var content: some View {
-        switch router.destination {
-        case .commandCenter:
-            CommandCenterView()
-        case .projects:
-            ProjectsView()
-        case .network:
-            NetworkView()
-        case .messages:
-            MessagesView()
-        case .account:
-            AccountView()
-        case .catalogue:
-            CatalogueView()
-        case .upload:
-            UploadView()
-        case .revenue:
-            RevenueView()
-        case .originals:
-            OriginalsView()
-        case .preProduction:
-            PhaseHubView(phase: .preProduction)
-        case .production:
-            PhaseHubView(phase: .production)
-        case .postProduction:
-            PhaseHubView(phase: .postProduction)
-        case .cast:
-            CastingPortalView()
-        case .crew:
-            CrewMarketplaceView()
-        case .locations:
-            LocationsView()
-        case .equipment:
-            EquipmentView()
-        case .catering:
-            CateringView()
-        case .music:
-            MusicScoringView()
-        case .legalInbox:
-            LegalInboxView()
+        if router.isShowingProjectTool,
+           let tool = router.selectedTool,
+           let projectId = router.selectedProjectId {
+            ProjectToolDetailView(projectId: projectId, tool: tool)
+        } else {
+            switch router.destination {
+            case .commandCenter:
+                CommandCenterView()
+            case .projects:
+                ProjectsView()
+            case .network:
+                NetworkView()
+            case .messages:
+                MessagesView()
+            case .account:
+                AccountView()
+            case .catalogue:
+                CatalogueView()
+            case .upload:
+                UploadView()
+            case .revenue:
+                RevenueView()
+            case .originals:
+                OriginalsView()
+            case .preProduction:
+                PhaseHubView(phase: .preProduction)
+            case .production:
+                PhaseHubView(phase: .production)
+            case .postProduction:
+                PhaseHubView(phase: .postProduction)
+            case .cast:
+                CastingPortalView()
+            case .crew:
+                CrewMarketplaceView()
+            case .locations:
+                LocationsView()
+            case .equipment:
+                EquipmentView()
+            case .catering:
+                CateringView()
+            case .music:
+                MusicScoringView()
+            case .legalInbox:
+                LegalInboxView()
+            }
         }
     }
 }

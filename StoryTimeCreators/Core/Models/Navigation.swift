@@ -317,10 +317,18 @@ final class AppRouter: ObservableObject {
     @Published var selectedProjectId: String?
     @Published var selectedTool: ProjectTool?
     @Published var projectPath: [ProjectNav] = []
+    /// Where to return after leaving a tool (phase hub vs projects).
+    @Published var toolReturnDestination: AppDestination?
+
+    var isShowingProjectTool: Bool {
+        guard let tool = selectedTool else { return false }
+        return !tool.isMarketplaceStyle
+    }
 
     func open(_ dest: AppDestination) {
         destination = dest
         selectedTool = nil
+        toolReturnDestination = nil
         if dest == .projects {
             selectedProjectId = nil
             projectPath = []
@@ -346,13 +354,16 @@ final class AppRouter: ObservableObject {
         selectedProjectId = id
         projectPath = [.overview(id)]
         destination = .projects
+        selectedTool = nil
+        toolReturnDestination = nil
         closeMenu()
     }
 
     func openTool(_ tool: ProjectTool, projectId: String?) {
+        toolReturnDestination = destination
         selectedTool = tool
         selectedProjectId = projectId ?? selectedProjectId
-        // Marketplace-style tools that are global
+
         switch tool {
         case .castingPortal:
             destination = .cast
@@ -369,23 +380,25 @@ final class AppRouter: ObservableObject {
         case .distribution:
             destination = .upload
         default:
-            // Project-scoped tools open inside the projects workspace so detail views stay API-connected.
+            // Stay on the current screen (phase hub or projects); shell overlays the tool report.
             if let pid = selectedProjectId {
-                destination = .projects
                 projectPath = [.overview(pid), .tool(pid, tool)]
-            } else {
-                destination = tool.phase.destination
-                projectPath = []
             }
         }
         closeMenu()
     }
 
     func leaveToolDetail() {
+        let returnTo = toolReturnDestination
         selectedTool = nil
+        toolReturnDestination = nil
         if let pid = selectedProjectId {
             projectPath = [.overview(pid)]
-            destination = .projects
+        } else {
+            projectPath = []
+        }
+        if let returnTo {
+            destination = returnTo
         }
     }
 }
@@ -393,4 +406,16 @@ final class AppRouter: ObservableObject {
 enum ProjectNav: Hashable {
     case overview(String)
     case tool(String, ProjectTool)
+}
+
+extension ProjectTool {
+    var isMarketplaceStyle: Bool {
+        switch self {
+        case .castingPortal, .crewMarketplace, .locationMarketplace,
+             .equipmentPlanning, .onSetCatering, .musicScoring, .distribution:
+            return true
+        default:
+            return false
+        }
+    }
 }

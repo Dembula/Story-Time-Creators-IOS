@@ -37,10 +37,11 @@ struct VAFloatingButton: View {
                 }
                 .buttonStyle(.plain)
                 .padding(.trailing, 18)
-                .padding(.bottom, 18)
+                .padding(.bottom, 28)
                 .accessibilityLabel("Open Story Time assistant")
             }
         }
+        .ignoresSafeArea(.keyboard)
         .onAppear {
             pulse = true
             Task { await controller.loadStatus() }

@@ -81,10 +81,9 @@ struct ProjectToolDetailView: View {
     private var header: some View {
         HStack {
             Button {
-                router.projectPath = [.overview(projectId)]
-                router.selectedTool = nil
+                router.leaveToolDetail()
             } label: {
-                Label("Workspace", systemImage: "chevron.left")
+                Label(backLabel, systemImage: "chevron.left")
                     .font(STFont.body(14, weight: .semibold))
                     .foregroundStyle(STColor.primary)
             }
@@ -100,6 +99,16 @@ struct ProjectToolDetailView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .overlay(alignment: .bottom) { Rectangle().fill(STColor.border).frame(height: 1) }
+    }
+
+    private var backLabel: String {
+        switch router.toolReturnDestination {
+        case .preProduction: return "Pre-Production"
+        case .production: return "Production"
+        case .postProduction: return "Post-Production"
+        case .projects: return "Workspace"
+        default: return "Back"
+        }
     }
 
     private var summaryCard: some View {

@@ -5,34 +5,39 @@ struct VAPanelView: View {
     @State private var input = ""
 
     var body: some View {
-        HStack(spacing: 0) {
-            Color.black.opacity(0.5)
-                .ignoresSafeArea()
-                .onTapGesture { controller.close() }
+        GeometryReader { geo in
+            let isCompact = geo.size.width < 520
+            let panelWidth = isCompact ? geo.size.width : min(400, geo.size.width * 0.9)
 
-            VStack(spacing: 0) {
-                header
-                messagesList
-                suggestionsRow
-                composer
+            ZStack(alignment: .trailing) {
+                Color.black.opacity(0.55)
+                    .ignoresSafeArea()
+                    .onTapGesture { controller.close() }
+
+                VStack(spacing: 0) {
+                    header
+                    messagesList
+                    suggestionsRow
+                    composer
+                }
+                .frame(width: panelWidth)
+                .frame(maxHeight: .infinity)
+                .background(STColor.surface)
+                .safeAreaPadding(.bottom, 8)
+                .clipShape(
+                    UnevenRoundedRectangle(
+                        topLeadingRadius: isCompact ? 0 : 20,
+                        bottomLeadingRadius: isCompact ? 0 : 20,
+                        bottomTrailingRadius: 0,
+                        topTrailingRadius: 0,
+                        style: .continuous
+                    )
+                )
+                .shadow(color: .black.opacity(0.35), radius: 24, x: -8)
             }
-            .frame(width: min(380, UIScreen.main.bounds.width * 0.88))
-            .background(
-                STColor.surface
-                    .overlay(alignment: .top) {
-                        STColor.orangeGlow
-                            .frame(height: 180)
-                            .opacity(0.35)
-                            .allowsHitTesting(false)
-                    }
-            )
-            .overlay(alignment: .leading) {
-                Rectangle()
-                    .fill(STColor.border)
-                    .frame(width: 1)
-            }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .trailing)
         }
-        .ignoresSafeArea(edges: .vertical)
+        .ignoresSafeArea(edges: .bottom)
     }
 
     private var header: some View {
@@ -60,13 +65,14 @@ struct VAPanelView: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(STColor.textSecondary)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 36, height: 36)
                     .background(Circle().fill(STColor.surfaceElevated))
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(STColor.background.opacity(0.92))
+        .padding(.top, 12)
+        .padding(.bottom, 12)
+        .background(STColor.background.opacity(0.95))
         .overlay(alignment: .bottom) {
             Rectangle().fill(STColor.border).frame(height: 1)
         }
@@ -105,6 +111,7 @@ struct VAPanelView: View {
                 }
                 .padding(16)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .onChange(of: controller.messages.count) { _, _ in
                 scrollToBottom(proxy: proxy)
             }
@@ -123,6 +130,7 @@ struct VAPanelView: View {
                 .foregroundStyle(isUser ? Color.black.opacity(0.9) : STColor.textPrimary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
+                .frame(maxWidth: 320, alignment: isUser ? .trailing : .leading)
                 .background(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(isUser ? AnyShapeStyle(STColor.brandGradient) : AnyShapeStyle(STColor.surfaceElevated))
@@ -136,37 +144,41 @@ struct VAPanelView: View {
     }
 
     private var suggestionsRow: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(controller.suggestions, id: \.self) { suggestion in
-                    Button {
-                        controller.applySuggestion(suggestion)
-                    } label: {
-                        Text(suggestion)
-                            .font(STFont.body(12, weight: .medium))
-                            .foregroundStyle(STColor.accent)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(
-                                Capsule()
-                                    .fill(STColor.primary.opacity(0.12))
-                                    .overlay(Capsule().stroke(STColor.primary.opacity(0.28), lineWidth: 1))
-                            )
+        Group {
+            if !controller.suggestions.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(controller.suggestions.enumerated()), id: \.offset) { _, suggestion in
+                            Button {
+                                controller.applySuggestion(suggestion)
+                            } label: {
+                                Text(suggestion)
+                                    .font(STFont.body(12, weight: .medium))
+                                    .foregroundStyle(STColor.accent)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(
+                                        Capsule()
+                                            .fill(STColor.primary.opacity(0.12))
+                                            .overlay(Capsule().stroke(STColor.primary.opacity(0.28), lineWidth: 1))
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(controller.isSending)
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .disabled(controller.isSending)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                }
+                .overlay(alignment: .top) {
+                    Rectangle().fill(STColor.border).frame(height: 1)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
-        }
-        .overlay(alignment: .top) {
-            Rectangle().fill(STColor.border).frame(height: 1)
         }
     }
 
     private var composer: some View {
-        HStack(spacing: 10) {
+        HStack(alignment: .bottom, spacing: 10) {
             TextField("Ask anything…", text: $input, axis: .vertical)
                 .lineLimit(1...4)
                 .textFieldStyle(.plain)
@@ -189,14 +201,16 @@ struct VAPanelView: View {
                 Task { await controller.send(text) }
             } label: {
                 Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 32))
+                    .font(.system(size: 34))
                     .foregroundStyle(canSend ? STColor.primary : STColor.textMuted)
             }
             .disabled(!canSend)
+            .padding(.bottom, 2)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(STColor.background.opacity(0.95))
+        .padding(.top, 10)
+        .padding(.bottom, 10)
+        .background(STColor.background.opacity(0.98))
     }
 
     private var canSend: Bool {
