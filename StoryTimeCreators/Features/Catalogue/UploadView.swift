@@ -32,15 +32,17 @@ struct UploadView: View {
 
                 VStack(alignment: .leading, spacing: 12) {
                     SectionHeader(title: "Media from device")
+                    let posterLoading = vm.isUploadingPoster
+                    let videoLoading = vm.isUploadingVideo
                     PhotosPicker(selection: $posterItem, matching: .images) {
-                        uploadButtonLabel("Choose poster image", icon: "photo", loading: vm.isUploadingPoster)
+                        uploadButtonLabel("Choose poster image", icon: "photo", loading: posterLoading)
                     }
                     .onChange(of: posterItem) { _, item in
                         Task { await vm.uploadPhotoItem(item, kind: .poster, auth: auth) }
                     }
 
                     PhotosPicker(selection: $videoItem, matching: .videos) {
-                        uploadButtonLabel("Choose video file", icon: "film", loading: vm.isUploadingVideo)
+                        uploadButtonLabel("Choose video file", icon: "film", loading: videoLoading)
                     }
                     .onChange(of: videoItem) { _, item in
                         Task { await vm.uploadPhotoItem(item, kind: .video, auth: auth) }

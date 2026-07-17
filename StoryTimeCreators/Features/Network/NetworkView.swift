@@ -343,14 +343,20 @@ struct CreatorProfileView: View {
                         if let bio = profile.user?.bio, !bio.isEmpty {
                             Text(bio).font(STFont.body(14)).foregroundStyle(STColor.textSecondary)
                         }
-                        HStack(spacing: 10) {
+                            HStack(spacing: 10) {
                             Button { Task { await vm.toggleFollow(userId: userId, auth: auth) } } label: {
                                 Text(profile.following == true ? "Following" : "Follow")
                                     .font(STFont.body(14, weight: .semibold))
                                     .frame(maxWidth: .infinity)
                                     .padding(.vertical, 10)
-                                    .background(Capsule().fill(profile.following == true ? STColor.surfaceElevated : STColor.brandGradient))
                                     .foregroundStyle(profile.following == true ? STColor.textPrimary : .black)
+                                    .background(
+                                        Capsule().fill(
+                                            profile.following == true
+                                                ? AnyShapeStyle(STColor.surfaceElevated)
+                                                : AnyShapeStyle(STColor.brandGradient)
+                                        )
+                                    )
                             }
                             if profile.connectionStatus != "ACCEPTED" {
                                 Button { Task { await vm.connect(userId: userId, auth: auth) } } label: {
@@ -402,7 +408,7 @@ private final class NetworkHubViewModel: ObservableObject {
     @Published var state: LoadState = .idle
     @Published var isPosting = false
 
-    enum LoadState { case idle, loading, loaded, error(String) }
+    enum LoadState: Equatable { case idle, loading, loaded, error(String) }
 
     private let client = APIClient.shared
 
