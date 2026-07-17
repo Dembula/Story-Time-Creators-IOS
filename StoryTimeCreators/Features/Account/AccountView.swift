@@ -221,7 +221,7 @@ private final class AccountViewModel: ObservableObject {
         do {
             let updated: CreatorUser = try await client.patch("/api/me", body: body)
             user = updated
-            auth.currentUser = updated
+            auth.applyProfile(updated)
             bind(updated)
             currentPassword = ""
             newPassword = ""
