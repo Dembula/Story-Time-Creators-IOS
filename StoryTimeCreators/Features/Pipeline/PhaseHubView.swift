@@ -11,6 +11,8 @@ struct PhaseHubView: View {
     @State private var loadError: String?
 
     private var tools: [ProjectTool] { ProjectTool.hubTools(for: phase) }
+    private var marketplaceCount: Int { tools.filter(\.isMarketplaceStyle).count }
+    private var reportCount: Int { tools.count - marketplaceCount }
 
     init(phase: ProjectPhase) {
         self.phase = phase
@@ -24,18 +26,18 @@ struct PhaseHubView: View {
                 ErrorStateView(message: loadError, retry: { Task { await loadProjects() } })
             } else {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 20) {
+                        hero
                         projectPicker
-                        SectionHeader(
-                            title: phase.title,
-                            trailing: "\(tools.count) tools"
-                        )
+                        insightStrip
+                        SectionHeader(title: "Tools", trailing: "\(tools.count)")
                         toolsGrid
                     }
                     .padding(16)
                 }
             }
         }
+        .background(STColor.background)
         .task {
             if selectedProjectId == nil {
                 selectedProjectId = router.selectedProjectId
@@ -44,9 +46,88 @@ struct PhaseHubView: View {
         }
     }
 
+    private var hero: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(phase.title.uppercased())
+                .font(STFont.body(11, weight: .bold))
+                .tracking(1.5)
+                .foregroundStyle(STColor.accent)
+            Text(phaseHeroTitle)
+                .font(STFont.display(26, weight: .bold))
+                .foregroundStyle(STColor.textPrimary)
+            Text(phaseHeroSubtitle)
+                .font(STFont.body(14))
+                .foregroundStyle(STColor.textSecondary)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            STColor.primary.opacity(0.28),
+                            STColor.surface,
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .stroke(STColor.primary.opacity(0.25), lineWidth: 1)
+                )
+        )
+    }
+
+    private var phaseHeroTitle: String {
+        switch phase {
+        case .preProduction: return "Shape the story"
+        case .production: return "Run the shoot"
+        case .postProduction: return "Finish & deliver"
+        }
+    }
+
+    private var phaseHeroSubtitle: String {
+        switch phase {
+        case .preProduction:
+            return "Ideas, scripts, cast, crew, locations, and readiness — with live activity from your project."
+        case .production:
+            return "Call sheets, continuity, dailies, expenses, and on-set ops in one place."
+        case .postProduction:
+            return "Music, packaging, and distribution into your catalogue upload pipeline."
+        }
+    }
+
+    private var insightStrip: some View {
+        HStack(spacing: 10) {
+            insightChip(title: "Project tools", value: "\(reportCount)", icon: "chart.bar.doc.horizontal")
+            insightChip(title: "Marketplaces", value: "\(marketplaceCount)", icon: "person.3.fill")
+            insightChip(title: "Projects", value: "\(projects.count)", icon: "folder.fill")
+        }
+    }
+
+    private func insightChip(title: String, value: String, icon: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(STColor.primary)
+            Text(value)
+                .font(STFont.display(18, weight: .bold))
+                .foregroundStyle(STColor.textPrimary)
+            Text(title)
+                .font(STFont.body(10))
+                .foregroundStyle(STColor.textMuted)
+                .lineLimit(1)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassPanel()
+    }
+
     private var projectPicker: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Project context")
+            Text("Active project")
                 .font(STFont.body(12, weight: .semibold))
                 .foregroundStyle(STColor.textMuted)
             Menu {
@@ -64,9 +145,16 @@ struct PhaseHubView: View {
                 HStack {
                     Image(systemName: "folder.fill")
                         .foregroundStyle(STColor.primary)
-                    Text(selectedProjectTitle)
-                        .font(STFont.body(15, weight: .medium))
-                        .foregroundStyle(STColor.textPrimary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(selectedProjectTitle)
+                            .font(STFont.body(15, weight: .medium))
+                            .foregroundStyle(STColor.textPrimary)
+                        Text(selectedProjectId == nil
+                             ? "Required for activity reports"
+                             : "Reports & updates use this project")
+                            .font(STFont.body(11))
+                            .foregroundStyle(STColor.textMuted)
+                    }
                     Spacer()
                     Image(systemName: "chevron.up.chevron.down")
                         .font(.system(size: 11, weight: .semibold))
@@ -93,7 +181,8 @@ struct PhaseHubView: View {
                 ToolCard(
                     title: tool.label,
                     subtitle: toolSubtitle(for: tool),
-                    systemImage: tool.systemImage
+                    systemImage: tool.systemImage,
+                    badge: tool.isMarketplaceStyle ? "Market" : "Live"
                 ) {
                     openTool(tool)
                 }
@@ -115,12 +204,12 @@ struct PhaseHubView: View {
 
     private func toolSubtitle(for tool: ProjectTool) -> String? {
         if tool.isMarketplaceStyle {
-            return "Browse & manage contacts — no payments"
+            return "Browse roster & inquire — payments stay on web"
         }
         if selectedProjectId != nil {
-            return "Opens activity report for this project"
+            return "Open live activity, versions, and workspace updates"
         }
-        return "Select a project above to open this tool"
+        return "Select a project above to unlock this report"
     }
 
     @MainActor

@@ -94,20 +94,41 @@ struct ToolCard: View {
     let title: String
     var subtitle: String?
     var systemImage: String
+    var badge: String? = nil
     var action: () -> Void
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 14) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(STColor.primary)
-                    .frame(width: 42, height: 42)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(STColor.primary.opacity(0.12)))
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(STFont.body(15, weight: .semibold))
-                        .foregroundStyle(STColor.textPrimary)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [STColor.primary.opacity(0.28), STColor.primary.opacity(0.08)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 48, height: 48)
+                    Image(systemName: systemImage)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(STColor.accent)
+                }
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 8) {
+                        Text(title)
+                            .font(STFont.body(15, weight: .semibold))
+                            .foregroundStyle(STColor.textPrimary)
+                            .lineLimit(1)
+                        if let badge {
+                            Text(badge)
+                                .font(STFont.body(9, weight: .bold))
+                                .foregroundStyle(.black)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(Capsule().fill(STColor.brandGradient))
+                        }
+                    }
                     if let subtitle {
                         Text(subtitle)
                             .font(STFont.body(12))
@@ -115,13 +136,27 @@ struct ToolCard: View {
                             .lineLimit(2)
                     }
                 }
-                Spacer()
+                Spacer(minLength: 8)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(STColor.textMuted)
             }
             .padding(14)
-            .glassPanel()
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(STColor.surface)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(
+                                LinearGradient(
+                                    colors: [STColor.primary.opacity(0.35), STColor.border],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                ),
+                                lineWidth: 1
+                            )
+                    )
+            )
         }
         .buttonStyle(.plain)
     }

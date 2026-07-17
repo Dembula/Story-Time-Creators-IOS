@@ -4,11 +4,8 @@ enum AppConfig {
     /// Production Story Time API origin (same backend as the creator web portal).
     static let apiBaseURL = URL(string: "https://story-time.online")!
 
-    /// Custom URL scheme used to complete OAuth (Apple / Google / GitHub) via ASWebAuthenticationSession.
-    static let oauthCallbackScheme = "storytimecreators"
-    static let oauthCallbackURL = URL(string: "\(oauthCallbackScheme)://auth/callback")!
-
     static let appName = "Story Time Creators"
+    /// Only content creator accounts are supported in this app.
     static let creatorRole = "CONTENT_CREATOR"
 
     /// Feature flags for this native client.

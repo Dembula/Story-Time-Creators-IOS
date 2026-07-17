@@ -11,9 +11,6 @@ struct StoryTimeCreatorsApp: App {
                 .environmentObject(auth)
                 .environmentObject(appRouter)
                 .preferredColorScheme(.dark)
-                .onOpenURL { url in
-                    auth.handleOAuthCallback(url: url)
-                }
         }
     }
 }

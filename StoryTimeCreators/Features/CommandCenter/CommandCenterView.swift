@@ -24,56 +24,199 @@ struct CommandCenterView: View {
 
     private var content: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 24) {
+                welcomeHero
                 if let overview = vm.response?.overview {
-                    overviewStrip(overview)
+                    spotlight(overview)
                 }
+                projectsSection
                 revenueSection
                 engagementSection
                 productionSection
                 topContentSection
-                projectsSection
                 calendarSection
                 retentionSection
+                aiSection
             }
             .padding(16)
         }
     }
 
-    private func overviewStrip(_ overview: CommandCenterOverview) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
-                miniStat("Active projects", value: "\(overview.activeProjects ?? 0)", icon: "folder.fill")
-                miniStat("Views (7d)", value: "\(overview.viewsLast7d ?? 0)", icon: "eye.fill")
-                if let growth = overview.viewerGrowth7dPct {
-                    miniStat("Growth", value: String(format: "%.1f%%", growth), icon: "chart.line.uptrend.xyaxis")
+    private var welcomeHero: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("COMMAND CENTER")
+                .font(STFont.body(11, weight: .bold))
+                .tracking(1.6)
+                .foregroundStyle(STColor.accent)
+            Text(greeting)
+                .font(STFont.display(28, weight: .bold))
+                .foregroundStyle(STColor.textPrimary)
+            Text("Your production pulse, catalogue performance, and calendar — live from the studio.")
+                .font(STFont.body(14))
+                .foregroundStyle(STColor.textSecondary)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [STColor.primary.opacity(0.32), STColor.surface],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .stroke(STColor.primary.opacity(0.28), lineWidth: 1)
+                )
+        )
+    }
+
+    private var greeting: String {
+        let name = auth.currentUser?.displayName.components(separatedBy: " ").first ?? "Creator"
+        return "Hey, \(name)"
+    }
+
+    private func spotlight(_ overview: CommandCenterOverview) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SectionHeader(title: "Today’s snapshot")
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                spotlightTile(
+                    title: "Active projects",
+                    value: "\(overview.activeProjects ?? 0)",
+                    icon: "folder.fill",
+                    accent: true
+                )
+                spotlightTile(
+                    title: "Views · 7 days",
+                    value: "\(overview.viewsLast7d ?? 0)",
+                    icon: "eye.fill",
+                    accent: false
+                )
+                spotlightTile(
+                    title: "Growth",
+                    value: overview.viewerGrowth7dPct.map { String(format: "%.1f%%", $0) } ?? "—",
+                    icon: "chart.line.uptrend.xyaxis",
+                    accent: false
+                )
+                spotlightTile(
+                    title: "Engagement",
+                    value: overview.engagementRateApprox.map { String(format: "%.1f%%", $0) } ?? "—",
+                    icon: "heart.fill",
+                    accent: false
+                )
+            }
+
+            if let title = overview.topFilmTitle {
+                HStack(spacing: 12) {
+                    Image(systemName: "star.circle.fill")
+                        .font(.system(size: 28))
+                        .foregroundStyle(STColor.accent)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Top performing title")
+                            .font(STFont.body(11, weight: .medium))
+                            .foregroundStyle(STColor.textMuted)
+                        Text(title)
+                            .font(STFont.body(15, weight: .semibold))
+                            .foregroundStyle(STColor.textPrimary)
+                        if let views = overview.topFilmViews {
+                            Text("\(views) views")
+                                .font(STFont.body(12))
+                                .foregroundStyle(STColor.textSecondary)
+                        }
+                    }
+                    Spacer()
+                    if let revenue = overview.topFilmRevenueRand {
+                        Text(formatZAR(revenue))
+                            .font(STFont.mono(13, weight: .bold))
+                            .foregroundStyle(STColor.accent)
+                    }
                 }
-                if let rate = overview.engagementRateApprox {
-                    miniStat("Engagement", value: String(format: "%.1f%%", rate), icon: "heart.fill")
-                }
-                if let title = overview.topFilmTitle {
-                    miniStat("Top title", value: title, icon: "star.fill")
-                }
+                .padding(14)
+                .glassPanel()
             }
         }
+    }
+
+    private func spotlightTile(title: String, value: String, icon: String, accent: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Image(systemName: icon)
+                .foregroundStyle(accent ? .black : STColor.primary)
+                .frame(width: 32, height: 32)
+                .background(
+                    RoundedRectangle(cornerRadius: 9)
+                        .fill(accent ? AnyShapeStyle(STColor.brandGradient) : AnyShapeStyle(STColor.primary.opacity(0.15)))
+                )
+            Text(value)
+                .font(STFont.display(22, weight: .bold))
+                .foregroundStyle(STColor.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(title)
+                .font(STFont.body(11))
+                .foregroundStyle(STColor.textSecondary)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassPanel()
     }
 
     private var revenueSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: "Revenue & watch time", trailing: vm.response?.analytics?.rangeKey?.uppercased())
             if let revenue = vm.response?.analytics?.revenue {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                    StatTile(title: "Revenue (ZAR)", value: formatZAR(revenue.amount), icon: "banknote.fill")
-                    StatTile(title: "Your share", value: formatPercent(revenue.sharePercent), icon: "percent")
-                    StatTile(title: "Watch time", value: formatDuration(revenue.watchTimeSeconds), icon: "clock.fill")
-                    StatTile(title: "Views (period)", value: "\(revenue.totalViews ?? 0)", icon: "play.circle.fill")
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Period revenue")
+                            .font(STFont.body(11))
+                            .foregroundStyle(STColor.textMuted)
+                        Text(formatZAR(revenue.amount))
+                            .font(STFont.display(28, weight: .bold))
+                            .foregroundStyle(STColor.textPrimary)
+                        Text("Share \(formatPercent(revenue.sharePercent))")
+                            .font(STFont.body(12, weight: .medium))
+                            .foregroundStyle(STColor.accent)
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [STColor.primary.opacity(0.25), STColor.surface],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                    )
+
+                    VStack(spacing: 10) {
+                        miniMetric("Watch", formatDuration(revenue.watchTimeSeconds))
+                        miniMetric("Views", "\(revenue.totalViews ?? 0)")
+                    }
+                    .frame(width: 110)
+                }
+
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                     StatTile(title: "Streams", value: "\(revenue.streamCount ?? 0)", icon: "film.fill")
                     StatTile(title: "Per view", value: formatZAR(revenue.perViewRand), icon: "chart.bar.fill")
+                    StatTile(title: "Pool", value: formatZAR(revenue.creatorPool), icon: "person.3.fill")
                 }
             } else {
                 EmptyStateView(title: "No revenue data", subtitle: "Publish catalogue titles to start earning.", systemImage: "chart.line.uptrend.xyaxis")
             }
         }
+    }
+
+    private func miniMetric(_ title: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(STFont.body(10)).foregroundStyle(STColor.textMuted)
+            Text(value).font(STFont.body(14, weight: .bold)).foregroundStyle(STColor.textPrimary)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glassPanel()
     }
 
     private var engagementSection: some View {
@@ -86,7 +229,7 @@ struct CommandCenterView: View {
                     StatTile(title: "Avg watch", value: formatDuration(e.averageWatchTimeSeconds), icon: "timer")
                     StatTile(title: "Comments", value: "\(e.totalComments ?? 0)", icon: "bubble.left.fill")
                     StatTile(title: "Ratings", value: "\(e.totalRatings ?? 0)", icon: "star.fill")
-                    StatTile(title: "Watchlist adds", value: "\(e.watchlistCount ?? 0)", icon: "bookmark.fill")
+                    StatTile(title: "Watchlist", value: "\(e.watchlistCount ?? 0)", icon: "bookmark.fill")
                 }
             }
         }
@@ -96,10 +239,28 @@ struct CommandCenterView: View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader(title: "Production pulse")
             if let p = vm.response?.production {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                     StatTile(title: "Shoot days", value: "\(p.shootDaysTotal ?? 0)", icon: "video.fill")
-                    StatTile(title: "Open incidents", value: "\(p.openIncidents ?? 0)", icon: "exclamationmark.triangle.fill")
+                    StatTile(title: "Incidents", value: "\(p.openIncidents ?? 0)", icon: "exclamationmark.triangle.fill")
                     StatTile(title: "Call sheets", value: "\(p.callSheetsSaved ?? 0)", icon: "doc.richtext.fill")
+                }
+                if let tasks = p.tasksByStatus, !tasks.isEmpty {
+                    HStack(spacing: 8) {
+                        ForEach(tasks.keys.sorted(), id: \.self) { key in
+                            VStack(spacing: 4) {
+                                Text("\(tasks[key] ?? 0)")
+                                    .font(STFont.body(14, weight: .bold))
+                                    .foregroundStyle(STColor.textPrimary)
+                                Text(key.replacingOccurrences(of: "_", with: " "))
+                                    .font(STFont.body(9))
+                                    .foregroundStyle(STColor.textMuted)
+                                    .lineLimit(1)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(STColor.surfaceElevated))
+                        }
+                    }
                 }
             }
         }
@@ -110,9 +271,16 @@ struct CommandCenterView: View {
         let rows = vm.response?.analytics?.contentPerformance ?? []
         if !rows.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
-                SectionHeader(title: "Top catalogue performance", trailing: "\(rows.count)")
-                ForEach(rows.prefix(5)) { row in
-                    HStack {
+                SectionHeader(title: "Top catalogue", trailing: "\(min(rows.count, 5))")
+                ForEach(Array(rows.prefix(5).enumerated()), id: \.element.id) { index, row in
+                    HStack(spacing: 12) {
+                        Text("\(index + 1)")
+                            .font(STFont.mono(14, weight: .bold))
+                            .foregroundStyle(index == 0 ? .black : STColor.accent)
+                            .frame(width: 28, height: 28)
+                            .background(
+                                Circle().fill(index == 0 ? AnyShapeStyle(STColor.brandGradient) : AnyShapeStyle(STColor.primary.opacity(0.15)))
+                            )
                         VStack(alignment: .leading, spacing: 4) {
                             Text(row.title)
                                 .font(STFont.body(14, weight: .semibold))
@@ -123,11 +291,11 @@ struct CommandCenterView: View {
                         }
                         Spacer()
                         VStack(alignment: .trailing, spacing: 2) {
-                            Text("\(row.views ?? 0) views")
-                                .font(STFont.body(12, weight: .medium))
-                                .foregroundStyle(STColor.accent)
+                            Text("\(row.views ?? 0)")
+                                .font(STFont.body(13, weight: .bold))
+                                .foregroundStyle(STColor.textPrimary)
                             Text(formatDuration(row.watchTimeSeconds))
-                                .font(STFont.body(11))
+                                .font(STFont.body(10))
                                 .foregroundStyle(STColor.textMuted)
                         }
                     }
@@ -140,20 +308,35 @@ struct CommandCenterView: View {
 
     private var projectsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: "My projects", trailing: "\(vm.projects.count)")
+            HStack {
+                SectionHeader(title: "My projects", trailing: "\(vm.projects.count)")
+                Spacer(minLength: 8)
+                Button("See all") { router.open(.projects) }
+                    .font(STFont.body(12, weight: .semibold))
+                    .foregroundStyle(STColor.primary)
+            }
             if vm.projects.isEmpty {
                 EmptyStateView(title: "No projects", subtitle: "Create a project to unlock the pipeline.", systemImage: "folder.badge.plus")
             } else {
-                ForEach(vm.projects.prefix(6)) { project in
+                ForEach(vm.projects.prefix(4)) { project in
                     Button { router.openProject(project.id) } label: {
                         HStack(spacing: 12) {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(STColor.primary.opacity(0.18))
+                                .frame(width: 48, height: 48)
+                                .overlay {
+                                    Image(systemName: "film.stack")
+                                        .foregroundStyle(STColor.primary)
+                                }
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(project.title)
                                     .font(STFont.body(15, weight: .semibold))
                                     .foregroundStyle(STColor.textPrimary)
                                 HStack(spacing: 8) {
                                     phaseBadge(project.phaseLabel)
-                                    if let genre = project.genre { Text(genre).font(STFont.body(11)).foregroundStyle(STColor.textMuted) }
+                                    if let genre = project.genre {
+                                        Text(genre).font(STFont.body(11)).foregroundStyle(STColor.textMuted)
+                                    }
                                 }
                                 if let logline = project.logline, !logline.isEmpty {
                                     Text(logline)
@@ -164,13 +347,15 @@ struct CommandCenterView: View {
                             }
                             Spacer()
                             if let rollup = project.pipelineRollup?.overallPercent {
-                                Text("\(Int(rollup))%")
-                                    .font(STFont.mono(13, weight: .bold))
-                                    .foregroundStyle(STColor.accent)
+                                VStack(spacing: 2) {
+                                    Text("\(Int(rollup))%")
+                                        .font(STFont.mono(13, weight: .bold))
+                                        .foregroundStyle(STColor.accent)
+                                    Text("done")
+                                        .font(STFont.body(9))
+                                        .foregroundStyle(STColor.textMuted)
+                                }
                             }
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(STColor.textMuted)
                         }
                         .padding(14)
                         .glassPanel()
@@ -209,7 +394,7 @@ struct CommandCenterView: View {
                         GeometryReader { geo in
                             RoundedRectangle(cornerRadius: 4)
                                 .fill(STColor.brandGradient)
-                                .frame(width: geo.size.width * CGFloat(point.retainedPct / 100))
+                                .frame(width: max(4, geo.size.width * CGFloat(point.retainedPct / 100)))
                         }
                         .frame(height: 8)
                         Text(String(format: "%.0f%%", point.retainedPct))
@@ -219,23 +404,36 @@ struct CommandCenterView: View {
                     }
                 }
             }
+            .padding(14)
+            .glassPanel()
         }
     }
 
-    private func miniStat(_ title: String, value: String, icon: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Image(systemName: icon).foregroundStyle(STColor.primary)
-            Text(value)
-                .font(STFont.body(14, weight: .bold))
-                .foregroundStyle(STColor.textPrimary)
-                .lineLimit(1)
-            Text(title)
-                .font(STFont.body(10))
-                .foregroundStyle(STColor.textMuted)
+    @ViewBuilder
+    private var aiSection: some View {
+        if let ai = vm.response?.ai {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "MODOC activity")
+                HStack(spacing: 10) {
+                    StatTile(title: "Chats", value: "\(ai.modocConversationsInRange ?? 0)", icon: "bubble.left.and.bubble.right.fill")
+                    StatTile(title: "Messages", value: "\(ai.modocUserMessagesInRange ?? 0)", icon: "text.bubble.fill")
+                }
+                if let tasks = ai.topTasks, !tasks.isEmpty {
+                    ForEach(tasks.prefix(3)) { task in
+                        HStack {
+                            Text(task.task)
+                                .font(STFont.body(13))
+                                .foregroundStyle(STColor.textPrimary)
+                            Spacer()
+                            Text("\(task.count)")
+                                .font(STFont.mono(12, weight: .bold))
+                                .foregroundStyle(STColor.accent)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
         }
-        .padding(12)
-        .frame(width: 140, alignment: .leading)
-        .glassPanel()
     }
 
     private func phaseBadge(_ label: String) -> some View {

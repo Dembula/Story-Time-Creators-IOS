@@ -25,6 +25,7 @@ struct RootView: View {
                         showSplash = false
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .transition(.opacity)
                 .zIndex(10)
             }

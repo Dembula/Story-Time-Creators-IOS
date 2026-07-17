@@ -72,17 +72,6 @@ struct AccountView: View {
                 }
                 .disabled(vm.isSaving)
 
-                if vm.user?.multiRole == true, let roles = vm.user?.platformRoles {
-                    VStack(alignment: .leading, spacing: 8) {
-                        SectionHeader(title: "Platform roles")
-                        Text(roles.joined(separator: ", "))
-                            .font(STFont.body(12))
-                            .foregroundStyle(STColor.textSecondary)
-                    }
-                    .padding(16)
-                    .glassPanel()
-                }
-
                 Button(role: .destructive) { Task { await auth.signOut() } } label: {
                     Text("Sign out")
                         .font(STFont.body(15, weight: .semibold))

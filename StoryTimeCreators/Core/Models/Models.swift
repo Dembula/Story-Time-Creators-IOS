@@ -31,11 +31,7 @@ struct CreatorUser: Codable, Identifiable, Equatable {
 
     var isCreatorPortalEligible: Bool {
         let roles = Set((platformRoles ?? []) + [effectiveRole].filter { !$0.isEmpty })
-        let creator = Set([
-            "CONTENT_CREATOR", "MUSIC_CREATOR", "EQUIPMENT_COMPANY", "LOCATION_OWNER",
-            "CREW_TEAM", "CASTING_AGENCY", "CATERING_COMPANY", "FUNDER", "ADMIN",
-        ])
-        return !roles.isDisjoint(with: creator)
+        return roles.contains(AppConfig.creatorRole)
     }
 }
 

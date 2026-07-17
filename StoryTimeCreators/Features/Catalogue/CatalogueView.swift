@@ -47,7 +47,9 @@ struct CatalogueView: View {
                     .lineLimit(2)
                 HStack(spacing: 8) {
                     if let type = item.type {
-                        Text(type).font(STFont.body(11, weight: .medium)).foregroundStyle(STColor.accent)
+                        Text(friendlyType(type))
+                            .font(STFont.body(11, weight: .medium))
+                            .foregroundStyle(STColor.accent)
                     }
                     if let status = item.reviewStatus {
                         Text(status.replacingOccurrences(of: "_", with: " "))
@@ -70,6 +72,10 @@ struct CatalogueView: View {
         }
         .padding(14)
         .glassPanel()
+    }
+
+    private func friendlyType(_ raw: String) -> String {
+        CatalogueContentType(rawValue: raw)?.label ?? raw.replacingOccurrences(of: "_", with: " ").capitalized
     }
 
     @ViewBuilder

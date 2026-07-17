@@ -526,8 +526,18 @@ struct CreateContentBody: Encodable {
     var type: String
     var description: String?
     var posterUrl: String?
+    var backdropUrl: String?
     var videoUrl: String?
     var trailerUrl: String?
+    var scriptUrl: String?
+    var category: String?
+    var tags: String?
+    var language: String?
+    var country: String?
+    var ageRating: String?
+    var year: Int?
+    var duration: Int?
+    var episodes: Int?
     var linkedProjectId: String?
     var reviewStatus: String?
 }
