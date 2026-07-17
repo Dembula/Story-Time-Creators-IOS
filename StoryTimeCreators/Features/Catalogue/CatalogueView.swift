@@ -106,9 +106,18 @@ struct ContentDetailView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     if let poster = item.posterUrl, let url = URL(string: poster) {
-                        AsyncImage(url: url) { $0.resizable().scaledToFill() }
-                            .frame(height: 200)
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image.resizable().scaledToFill()
+                            default:
+                                RoundedRectangle(cornerRadius: 16)
+                                    .fill(STColor.primary.opacity(0.15))
+                                    .overlay { Image(systemName: "film").foregroundStyle(STColor.primary) }
+                            }
+                        }
+                        .frame(height: 200)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
                     }
                     Text(item.title).font(STFont.display(22, weight: .bold)).foregroundStyle(STColor.textPrimary)
                     metaGrid
@@ -188,9 +197,4 @@ private final class CatalogueViewModel: ObservableObject {
         }
         return error.localizedDescription
     }
-}
-
-extension CreatorContentItem: Hashable {
-    static func == (lhs: CreatorContentItem, rhs: CreatorContentItem) -> Bool { lhs.id == rhs.id }
-    func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
