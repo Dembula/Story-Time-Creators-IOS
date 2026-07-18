@@ -49,25 +49,6 @@ struct ProjectToolDetailView: View {
                                     activityRow(row, index: index)
                                 }
                             }
-
-                            Button {
-                                Task { await vm.markInProgress(auth: auth) }
-                            } label: {
-                                HStack {
-                                    if vm.isMarkingProgress { ProgressView().tint(.black) }
-                                    Text(vm.isMarkingProgress ? "Updating…" : "Mark in progress")
-                                        .font(STFont.body(15, weight: .semibold))
-                                }
-                                .foregroundStyle(.black)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 14)
-                                .background(RoundedRectangle(cornerRadius: 14).fill(STColor.brandGradient))
-                            }
-                            .disabled(vm.isMarkingProgress)
-
-                            if let msg = vm.progressMessage {
-                                Text(msg).font(STFont.body(12)).foregroundStyle(STColor.success)
-                            }
                         }
                         .padding(16)
                     }
@@ -252,8 +233,6 @@ final class ProjectToolReportViewModel: ObservableObject {
     @Published private(set) var rows: [ToolActivityRow] = []
     @Published private(set) var summaryText = "Connected to your project workspace."
     @Published private(set) var isLoading = false
-    @Published var isMarkingProgress = false
-    @Published var progressMessage: String?
     @Published var errorMessage: String?
 
     let projectId: String
@@ -309,7 +288,7 @@ final class ProjectToolReportViewModel: ObservableObject {
         combined.sort { ($0.timestamp ?? "") > ($1.timestamp ?? "") }
 
         if combined.isEmpty {
-            summaryText = "No recorded updates yet for \(tool.label). Work in the web studio or mark progress below to seed the timeline."
+            summaryText = "No recorded updates yet for \(tool.label). Work in the web studio to seed the timeline."
         } else {
             var parts = ["\(combined.count) update\(combined.count == 1 ? "" : "s")"]
             if toolHit { parts.append("synced from \(tool.label)") }
@@ -318,30 +297,6 @@ final class ProjectToolReportViewModel: ObservableObject {
         }
 
         rows = combined
-    }
-
-    func markInProgress(auth: AuthService) async {
-        isMarkingProgress = true
-        progressMessage = nil
-        defer { isMarkingProgress = false }
-
-        struct Body: Encodable {
-            var phase: String
-            var toolId: String
-            var status: String
-            var percent: Double
-        }
-
-        do {
-            _ = try await client.patch(
-                "/api/creator/projects/\(projectId)/tools/progress",
-                body: Body(phase: tool.phase.rawValue, toolId: tool.rawValue, status: "IN_PROGRESS", percent: 50)
-            ) as OkResponse
-            progressMessage = "Marked \(tool.label) as in progress."
-            await load(auth: auth)
-        } catch {
-            progressMessage = error.localizedDescription
-        }
     }
 
     private func mergeRows(_ input: [ToolActivityRow]) -> [ToolActivityRow] {
