@@ -317,78 +317,26 @@ struct CreatorProfileView: View {
     @Environment(\.dismiss) private var dismiss
     let userId: String
     @StateObject private var vm = CreatorProfileViewModel()
+    @State private var showChat = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 if let profile = vm.profile {
                     VStack(alignment: .leading, spacing: 20) {
-                        HStack(spacing: 14) {
-                            Circle().fill(STColor.primary.opacity(0.2)).frame(width: 72, height: 72)
-                                .overlay {
-                                    Text(String((profile.user?.label ?? "C").prefix(1)))
-                                        .font(STFont.display(28, weight: .bold))
-                                        .foregroundStyle(STColor.primary)
-                                }
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(profile.user?.label ?? "Creator")
-                                    .font(STFont.display(20, weight: .bold))
-                                if let headline = profile.user?.headline {
-                                    Text(headline).font(STFont.body(13)).foregroundStyle(STColor.textSecondary)
-                                }
-                                Text("\(profile.followerCount ?? 0) followers · \(profile.followingCount ?? 0) following")
-                                    .font(STFont.body(11)).foregroundStyle(STColor.textMuted)
-                            }
-                        }
+                        profileHeader(profile)
                         if let bio = profile.user?.bio, !bio.isEmpty {
                             Text(bio).font(STFont.body(14)).foregroundStyle(STColor.textSecondary)
                         }
-                            HStack(spacing: 10) {
-                            Button { Task { await vm.toggleFollow(userId: userId, auth: auth) } } label: {
-                                Text(profile.following == true ? "Following" : "Follow")
-                                    .font(STFont.body(14, weight: .semibold))
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 10)
-                                    .foregroundStyle(profile.following == true ? STColor.textPrimary : .black)
-                                    .background(
-                                        Capsule().fill(
-                                            profile.following == true
-                                                ? AnyShapeStyle(STColor.surfaceElevated)
-                                                : AnyShapeStyle(STColor.brandGradient)
-                                        )
-                                    )
-                            }
-                            if profile.connectionStatus != "ACCEPTED" {
-                                Button { Task { await vm.connect(userId: userId, auth: auth) } } label: {
-                                    Text("Connect")
-                                        .font(STFont.body(14, weight: .semibold))
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 10)
-                                        .background(Capsule().stroke(STColor.primary, lineWidth: 1))
-                                        .foregroundStyle(STColor.primary)
-                                }
-                            }
-                        }
-                        if let contents = profile.contents, !contents.isEmpty {
-                            SectionHeader(title: "Published titles")
-                            ForEach(contents) { item in
-                                Text(item.title).font(STFont.body(14)).foregroundStyle(STColor.textPrimary).padding(10).glassPanel()
-                            }
-                        }
-                        if let posts = profile.posts, !posts.isEmpty {
-                            SectionHeader(title: "Posts")
-                            ForEach(posts.prefix(10)) { post in
-                                VStack(alignment: .leading, spacing: 6) {
-                                    Text(post.body ?? "").font(STFont.body(13)).foregroundStyle(STColor.textSecondary)
-                                    Text(DateParser.display(post.createdAt)).font(STFont.body(10)).foregroundStyle(STColor.textMuted)
-                                }
-                                .padding(10).glassPanel()
-                            }
-                        }
+                        actionButtons(profile)
+                        workSection(profile)
+                        postsSection(profile)
                     }
                     .padding(16)
                 } else if vm.isLoading {
                     LoadingStateView()
+                } else {
+                    ErrorStateView(message: "Couldn't load this profile.", retry: { Task { await vm.load(userId: userId, auth: auth) } })
                 }
             }
             .background(STColor.background)
@@ -397,6 +345,177 @@ struct CreatorProfileView: View {
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
         }
         .task { await vm.load(userId: userId, auth: auth) }
+        .sheet(isPresented: $showChat) {
+            NetworkChatSheet(peerId: userId, peerName: vm.profile?.user?.label ?? "Creator")
+                .environmentObject(auth)
+        }
+    }
+
+    private func profileHeader(_ profile: NetworkProfileResponse) -> some View {
+        HStack(spacing: 14) {
+            avatar(name: profile.user?.label ?? "C", imageURL: profile.user?.image)
+                .frame(width: 72, height: 72)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(profile.user?.label ?? "Creator")
+                    .font(STFont.display(20, weight: .bold))
+                    .foregroundStyle(STColor.textPrimary)
+                if let headline = profile.user?.headline {
+                    Text(headline).font(STFont.body(13)).foregroundStyle(STColor.textSecondary)
+                }
+                if let location = profile.user?.location, !location.isEmpty {
+                    Label(location, systemImage: "mappin.and.ellipse")
+                        .font(STFont.body(11)).foregroundStyle(STColor.textMuted)
+                }
+                Text("\(profile.followerCount ?? 0) followers · \(profile.followingCount ?? 0) following")
+                    .font(STFont.body(11)).foregroundStyle(STColor.textMuted)
+            }
+            Spacer()
+        }
+    }
+
+    private func actionButtons(_ profile: NetworkProfileResponse) -> some View {
+        HStack(spacing: 10) {
+            Button { Task { await vm.toggleFollow(userId: userId, auth: auth) } } label: {
+                Text(profile.following == true ? "Following" : "Follow")
+                    .font(STFont.body(14, weight: .semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .foregroundStyle(profile.following == true ? STColor.textPrimary : .black)
+                    .background(
+                        Capsule().fill(
+                            profile.following == true
+                                ? AnyShapeStyle(STColor.surfaceElevated)
+                                : AnyShapeStyle(STColor.brandGradient)
+                        )
+                    )
+            }
+            if profile.connectionStatus == "ACCEPTED" {
+                Button { showChat = true } label: {
+                    Label("Message", systemImage: "bubble.left.fill")
+                        .font(STFont.body(14, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Capsule().stroke(STColor.primary, lineWidth: 1))
+                        .foregroundStyle(STColor.primary)
+                }
+            } else {
+                Button { Task { await vm.connect(userId: userId, auth: auth) } } label: {
+                    Text(vm.connectLabel(profile.connectionStatus))
+                        .font(STFont.body(14, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Capsule().stroke(STColor.primary, lineWidth: 1))
+                        .foregroundStyle(STColor.primary)
+                }
+                .disabled(profile.connectionStatus == "PENDING_SENT")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func workSection(_ profile: NetworkProfileResponse) -> some View {
+        if let contents = profile.contents, !contents.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                SectionHeader(title: "Their work", trailing: "\(contents.count)")
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(contents) { item in
+                            workCard(item)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func workCard(_ item: NetworkProfileContent) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            posterThumb(item.posterUrl)
+            Text(item.title)
+                .font(STFont.body(12, weight: .semibold))
+                .foregroundStyle(STColor.textPrimary)
+                .lineLimit(2)
+            if let type = item.type {
+                Text(type.replacingOccurrences(of: "_", with: " ").capitalized)
+                    .font(STFont.body(10))
+                    .foregroundStyle(STColor.textMuted)
+            }
+        }
+        .frame(width: 120)
+    }
+
+    private func posterThumb(_ url: String?) -> some View {
+        Group {
+            if let url, let u = URL(string: url) {
+                AsyncImage(url: u) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        RoundedRectangle(cornerRadius: 12).fill(STColor.surfaceElevated)
+                            .overlay(Image(systemName: "film").foregroundStyle(STColor.textMuted))
+                    }
+                }
+            } else {
+                RoundedRectangle(cornerRadius: 12).fill(STColor.surfaceElevated)
+                    .overlay(Image(systemName: "film").foregroundStyle(STColor.textMuted))
+            }
+        }
+        .frame(width: 120, height: 170)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    @ViewBuilder
+    private func postsSection(_ profile: NetworkProfileResponse) -> some View {
+        if let posts = profile.posts, !posts.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                SectionHeader(title: "Recent posts", trailing: "\(posts.count)")
+                ForEach(posts.prefix(15)) { post in
+                    VStack(alignment: .leading, spacing: 8) {
+                        if let body = post.body, !body.isEmpty {
+                            Text(body).font(STFont.body(14)).foregroundStyle(STColor.textPrimary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        if let project = post.project?.title {
+                            Label(project, systemImage: "folder.fill")
+                                .font(STFont.body(11)).foregroundStyle(STColor.primary)
+                        }
+                        HStack(spacing: 16) {
+                            Label("\(post.likeCount ?? 0)", systemImage: "heart")
+                            Label("\(post.commentCount ?? 0)", systemImage: "bubble.right")
+                            Spacer()
+                            Text(DateParser.display(post.createdAt))
+                        }
+                        .font(STFont.body(10))
+                        .foregroundStyle(STColor.textMuted)
+                    }
+                    .padding(12)
+                    .glassPanel()
+                }
+            }
+        }
+    }
+
+    private func avatar(name: String, imageURL: String?) -> some View {
+        Group {
+            if let imageURL, let url = URL(string: imageURL) {
+                AsyncImage(url: url) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        Circle().fill(STColor.primary.opacity(0.2)).overlay {
+                            Text(String(name.prefix(1)).uppercased())
+                                .font(STFont.display(28, weight: .bold)).foregroundStyle(STColor.primary)
+                        }
+                    }
+                }
+            } else {
+                Circle().fill(STColor.primary.opacity(0.2)).overlay {
+                    Text(String(name.prefix(1)).uppercased())
+                        .font(STFont.display(28, weight: .bold)).foregroundStyle(STColor.primary)
+                }
+            }
+        }
+        .clipShape(Circle())
     }
 }
 
@@ -508,5 +627,13 @@ private final class CreatorProfileViewModel: ObservableObject {
         struct StatusResponse: Decodable { var status: String? }
         _ = try? await client.post("/api/network/connect/\(userId)", body: ConnectBody(message: nil)) as StatusResponse
         await load(userId: userId, auth: auth)
+    }
+
+    func connectLabel(_ status: String?) -> String {
+        switch status {
+        case "PENDING_SENT": return "Request sent"
+        case "PENDING_RECEIVED": return "Respond to request"
+        default: return "Connect"
+        }
     }
 }

@@ -82,47 +82,70 @@ struct ProjectsView: View {
         Button {
             router.openProject(project.id)
         } label: {
-            HStack(spacing: 14) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(project.title)
-                        .font(STFont.body(16, weight: .semibold))
-                        .foregroundStyle(STColor.textPrimary)
-                        .lineLimit(1)
-                    HStack(spacing: 8) {
-                        phaseBadge(project.phaseLabel)
-                        if let status = project.status, !status.isEmpty {
-                            Text(status.replacingOccurrences(of: "_", with: " "))
-                                .font(STFont.body(11, weight: .medium))
-                                .foregroundStyle(STColor.textMuted)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 14) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(project.title)
+                            .font(STFont.body(16, weight: .semibold))
+                            .foregroundStyle(STColor.textPrimary)
+                            .lineLimit(1)
+                        HStack(spacing: 8) {
+                            phaseBadge(project.phaseLabel)
+                            if let status = project.status, !status.isEmpty {
+                                Text(status.replacingOccurrences(of: "_", with: " "))
+                                    .font(STFont.body(11, weight: .medium))
+                                    .foregroundStyle(STColor.textMuted)
+                            }
+                        }
+                        if let logline = project.logline, !logline.isEmpty {
+                            Text(logline)
+                                .font(STFont.body(12))
+                                .foregroundStyle(STColor.textSecondary)
+                                .lineLimit(2)
                         }
                     }
-                    if let logline = project.logline, !logline.isEmpty {
-                        Text(logline)
-                            .font(STFont.body(12))
-                            .foregroundStyle(STColor.textSecondary)
-                            .lineLimit(2)
+                    Spacer()
+                    if let rollup = project.pipelineRollup {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("\(Int(rollup.overallPercent ?? 0))%")
+                                .font(STFont.mono(16, weight: .bold))
+                                .foregroundStyle(STColor.accent)
+                            if let done = rollup.completedTools, let total = rollup.totalTools {
+                                Text("\(done)/\(total) done")
+                                    .font(STFont.body(10))
+                                    .foregroundStyle(STColor.textMuted)
+                            }
+                        }
                     }
+                    Image(systemName: "chevron.right")
+                        .foregroundStyle(STColor.textMuted)
                 }
-                Spacer()
+
                 if let rollup = project.pipelineRollup {
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("\(Int(rollup.overallPercent ?? 0))%")
-                            .font(STFont.mono(14, weight: .bold))
-                            .foregroundStyle(STColor.accent)
-                        if let done = rollup.completedTools, let total = rollup.totalTools {
-                            Text("\(done)/\(total) tools")
-                                .font(STFont.body(10))
-                                .foregroundStyle(STColor.textMuted)
-                        }
+                    progressBar(percent: rollup.overallPercent ?? 0)
+                    if rollup.inProgress > 0 {
+                        Text("\(rollup.inProgress) tool\(rollup.inProgress == 1 ? "" : "s") in progress")
+                            .font(STFont.body(10, weight: .medium))
+                            .foregroundStyle(STColor.primary)
                     }
                 }
-                Image(systemName: "chevron.right")
-                    .foregroundStyle(STColor.textMuted)
             }
             .padding(14)
             .glassPanel()
         }
         .buttonStyle(.plain)
+    }
+
+    private func progressBar(percent: Double) -> some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(STColor.surfaceElevated).frame(height: 6)
+                Capsule()
+                    .fill(STColor.brandGradient)
+                    .frame(width: max(6, geo.size.width * CGFloat(min(max(percent, 0), 100) / 100)), height: 6)
+            }
+        }
+        .frame(height: 6)
     }
 
     private func phaseBadge(_ label: String) -> some View {

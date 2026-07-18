@@ -199,6 +199,139 @@ struct InboxThreadRow: Identifiable, Hashable {
     var id: String { peerId }
 }
 
+// MARK: - Standalone network chat (used from a creator profile)
+
+struct NetworkChatSheet: View {
+    @EnvironmentObject private var auth: AuthService
+    @Environment(\.dismiss) private var dismiss
+    let peerId: String
+    let peerName: String
+
+    @StateObject private var vm = NetworkChatViewModel()
+    @State private var draft = ""
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                if let error = vm.error {
+                    Text(error)
+                        .font(STFont.body(12))
+                        .foregroundStyle(STColor.danger)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(STColor.danger.opacity(0.1))
+                }
+
+                if vm.messages.isEmpty {
+                    EmptyStateView(
+                        title: "No messages yet",
+                        subtitle: "Say hello to \(peerName).",
+                        systemImage: "bubble.left.and.bubble.right"
+                    )
+                    .frame(maxHeight: .infinity)
+                } else {
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 10) {
+                                ForEach(vm.messages) { msg in
+                                    let mine = msg.sender?.id == auth.currentUser?.id
+                                    bubble(text: msg.body ?? "", mine: mine)
+                                        .id(msg.id)
+                                }
+                            }
+                            .padding(16)
+                        }
+                        .onChange(of: vm.messages.count) { _, _ in
+                            if let last = vm.messages.last { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
+                        }
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    TextField("Message", text: $draft, axis: .vertical)
+                        .lineLimit(1...4)
+                        .padding(10)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(STColor.surfaceElevated))
+                    Button {
+                        let text = draft
+                        draft = ""
+                        Task { await vm.send(peerId: peerId, body: text, auth: auth) }
+                    } label: {
+                        Image(systemName: "paperplane.fill")
+                            .foregroundStyle(.black)
+                            .padding(10)
+                            .background(Circle().fill(STColor.brandGradient))
+                    }
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || vm.isSending)
+                }
+                .padding(16)
+            }
+            .background(STColor.background)
+            .navigationTitle(peerName)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
+        }
+        .task { await vm.load(peerId: peerId, auth: auth) }
+    }
+
+    private func bubble(text: String, mine: Bool) -> some View {
+        Text(text)
+            .font(STFont.body(14))
+            .foregroundStyle(mine ? .black : STColor.textPrimary)
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(mine ? AnyShapeStyle(STColor.brandGradient) : AnyShapeStyle(STColor.surfaceElevated))
+            )
+            .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
+    }
+}
+
+@MainActor
+private final class NetworkChatViewModel: ObservableObject {
+    @Published var messages: [NetworkChatMessage] = []
+    @Published var error: String?
+    @Published var isSending = false
+
+    private let client = APIClient.shared
+
+    func load(peerId: String, auth: AuthService) async {
+        do {
+            let thread: NetworkChatThreadResponse = try await client.get("/api/network/chats/\(peerId)")
+            messages = thread.messages ?? []
+            error = nil
+        } catch let api as APIError {
+            if case .forbidden = api {
+                error = "You need an accepted connection with this creator before you can message them."
+            } else {
+                error = api.errorDescription
+            }
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    func send(peerId: String, body: String, auth: AuthService) async {
+        guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        isSending = true
+        defer { isSending = false }
+        struct SendBody: Encodable { var body: String }
+        do {
+            let msg: NetworkChatMessage = try await client.post("/api/network/chats/\(peerId)", body: SendBody(body: body))
+            messages.append(msg)
+            error = nil
+        } catch let api as APIError {
+            if case .forbidden = api {
+                error = "You need an accepted connection with this creator before you can message them."
+            } else {
+                error = api.errorDescription
+            }
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+}
+
 @MainActor
 private final class MessagesHubViewModel: ObservableObject {
     @Published var networkConversations: [NetworkConversation] = []

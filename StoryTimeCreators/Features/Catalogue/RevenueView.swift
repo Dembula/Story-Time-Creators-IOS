@@ -17,11 +17,13 @@ struct RevenueView: View {
                         SectionHeader(title: "Revenue", trailing: "This month")
 
                         if let payload = vm.payload {
+                            heroRevenue(payload)
+
                             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                                 StatTile(
-                                    title: "Period Revenue",
-                                    value: vm.formatCurrency(payload.revenue),
-                                    icon: "banknote.fill"
+                                    title: "Watch-time share",
+                                    value: vm.formatPercent(payload.share),
+                                    icon: "percent"
                                 )
                                 StatTile(
                                     title: "Watch Time",
@@ -50,11 +52,25 @@ struct RevenueView: View {
                                 )
                             }
 
+                            SectionHeader(title: "Breakdown")
                             if let perView = payload.perViewRand {
                                 summaryRow("Per view", value: vm.formatCurrency(perView))
                             }
                             if let perStream = payload.perStreamRand {
                                 summaryRow("Per stream", value: vm.formatCurrency(perStream))
+                            }
+                            if let pool = payload.creatorPool {
+                                summaryRow("Creator pool (60%)", value: vm.formatCurrency(pool))
+                            }
+                            if let viewerSub = payload.viewerSubRevenue {
+                                summaryRow("Viewer pool revenue", value: vm.formatCurrency(viewerSub))
+                            }
+                            if let projected = payload.projectedRevenue {
+                                summaryRow("Projected", value: vm.formatCurrency(projected))
+                            }
+
+                            if let banking = payload.banking {
+                                bankingCard(banking)
                             }
 
                             if let payouts = payload.payouts, !payouts.isEmpty {
@@ -62,6 +78,11 @@ struct RevenueView: View {
                                 ForEach(Array(payouts.enumerated()), id: \.offset) { _, payout in
                                     payoutRow(payout, format: vm.formatCurrency)
                                 }
+                            } else {
+                                Text("No payouts yet. Earnings accrue to your wallet and are paid out per cycle.")
+                                    .font(STFont.body(12))
+                                    .foregroundStyle(STColor.textMuted)
+                                    .padding(.top, 4)
                             }
                         } else {
                             EmptyStateView(
@@ -78,6 +99,57 @@ struct RevenueView: View {
         .background(STColor.background)
         .task { await vm.load(auth: auth) }
         .refreshable { await vm.load(auth: auth) }
+    }
+
+    private func heroRevenue(_ payload: RevenueAPIResponse) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("This month’s revenue")
+                .font(STFont.body(12, weight: .medium))
+                .foregroundStyle(STColor.textMuted)
+            Text(vm.formatCurrency(payload.revenue))
+                .font(STFont.display(34, weight: .bold))
+                .foregroundStyle(STColor.textPrimary)
+            Text("Based on your \(vm.formatPercent(payload.share)) share of platform watch time")
+                .font(STFont.body(12))
+                .foregroundStyle(STColor.textSecondary)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [STColor.primary.opacity(0.28), STColor.surface],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(STColor.primary.opacity(0.25), lineWidth: 1)
+                )
+        )
+    }
+
+    private func bankingCard(_ banking: RevenueBanking) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "building.columns.fill")
+                .font(.system(size: 20))
+                .foregroundStyle(STColor.primary)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(banking.bankName ?? "Bank account")
+                    .font(STFont.body(14, weight: .semibold))
+                    .foregroundStyle(STColor.textPrimary)
+                Text("•••• \(banking.accountNumberLast4 ?? "****") · \(banking.accountType ?? "")")
+                    .font(STFont.body(11))
+                    .foregroundStyle(STColor.textMuted)
+            }
+            Spacer()
+            Image(systemName: banking.verified == true ? "checkmark.seal.fill" : "exclamationmark.circle")
+                .foregroundStyle(banking.verified == true ? STColor.success : STColor.textMuted)
+        }
+        .padding(14)
+        .glassPanel()
     }
 
     private func summaryRow(_ title: String, value: String) -> some View {
@@ -155,6 +227,11 @@ private final class RevenueViewModel: ObservableObject {
         return String(format: "%.1fh", seconds / 3600.0)
     }
 
+    func formatPercent(_ value: Double?) -> String {
+        guard let value else { return "0%" }
+        return String(format: "%.2f%%", value)
+    }
+
     private static func mapError(_ error: Error, auth: AuthService) -> String {
         if let api = error as? APIError, case .unauthorized = api {
             Task { await auth.signOut() }
@@ -172,13 +249,25 @@ private struct RevenueAPIResponse: Decodable {
     var streamCount: Int?
     var perViewRand: Double?
     var perStreamRand: Double?
+    var creatorPool: Double?
+    var viewerSubRevenue: Double?
+    var projectedRevenue: Double?
     var walletAvailable: Double?
     var walletTotalEarnings: Double?
+    var banking: RevenueBanking?
     var payouts: [RevenuePayout]?
+}
+
+struct RevenueBanking: Decodable {
+    var bankName: String?
+    var accountNumberLast4: String?
+    var accountType: String?
+    var verified: Bool?
 }
 
 struct RevenuePayout: Decodable {
     var amount: Double?
     var status: String?
+    var period: String?
     var createdAt: String?
 }

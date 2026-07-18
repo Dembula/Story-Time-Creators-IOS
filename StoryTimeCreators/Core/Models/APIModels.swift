@@ -777,6 +777,35 @@ enum DateParser {
         f.dateFormat = "yyyy-MM"
         return f.string(from: date)
     }
+
+    static func iso(_ date: Date) -> String {
+        ISO8601DateFormatter.st.string(from: date)
+    }
+}
+
+// MARK: - Calendar mutations
+
+struct CreateCalendarEventBody: Encodable {
+    var title: String
+    var description: String?
+    var startAt: String
+    var endAt: String?
+    var allDay: Bool
+    var visibility: String
+    var projectId: String?
+    var assigneeId: String?
+}
+
+/// Partial edit body — all optional so callers only send changed fields.
+struct UpdateCalendarEventBody: Encodable {
+    var title: String?
+    var description: String?
+    var startAt: String?
+    var endAt: String?
+    var allDay: Bool?
+    var visibility: String?
+    var projectId: String?
+    var assigneeId: String?
 }
 
 enum JSONStringArray {

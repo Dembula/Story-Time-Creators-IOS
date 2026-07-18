@@ -5,6 +5,7 @@ struct CommandCenterView: View {
     @EnvironmentObject private var auth: AuthService
     @StateObject private var vm = CommandCenterViewModel()
     @State private var calendarMonth = Date()
+    @State private var calendarSheet: CalendarSheetRoute?
 
     var body: some View {
         Group {
@@ -368,15 +369,60 @@ struct CommandCenterView: View {
 
     private var calendarSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: "Calendar", trailing: "\(vm.calendarEvents.count) events")
+            HStack {
+                SectionHeader(title: "Calendar", trailing: "\(vm.calendarEvents.count) events")
+                Spacer()
+                Button {
+                    calendarSheet = .new
+                } label: {
+                    Label("Add", systemImage: "plus.circle.fill")
+                        .font(STFont.body(14, weight: .semibold))
+                        .foregroundStyle(STColor.primary)
+                }
+            }
             CalendarGridView(
                 events: vm.calendarEvents,
                 displayedMonth: $calendarMonth,
-                onSelectEvent: { _ in }
+                onSelectEvent: { event in
+                    if event.editable == true {
+                        calendarSheet = .edit(event)
+                    }
+                }
             )
         }
         .onChange(of: calendarMonth) { _, newMonth in
             Task { await vm.loadCalendar(month: newMonth) }
+        }
+        .sheet(item: $calendarSheet) { route in
+            switch route {
+            case .new:
+                CalendarEventEditorSheet(
+                    event: nil,
+                    defaultDate: calendarMonth,
+                    projects: vm.projectOptions,
+                    onSave: { body in await vm.createEvent(body, month: calendarMonth) },
+                    onDelete: nil
+                )
+            case .edit(let event):
+                CalendarEventEditorSheet(
+                    event: event,
+                    defaultDate: calendarMonth,
+                    projects: vm.projectOptions,
+                    onSave: { body in
+                        await vm.updateEvent(id: event.id, body: UpdateCalendarEventBody(
+                            title: body.title,
+                            description: body.description,
+                            startAt: body.startAt,
+                            endAt: body.endAt,
+                            allDay: body.allDay,
+                            visibility: body.visibility,
+                            projectId: body.projectId,
+                            assigneeId: body.assigneeId
+                        ), month: calendarMonth)
+                    },
+                    onDelete: { await vm.deleteEvent(id: event.id, month: calendarMonth) }
+                )
+            }
         }
     }
 
@@ -501,6 +547,39 @@ private final class CommandCenterViewModel: ObservableObject {
         calendarEvents = await fetchCalendar(month: month)
     }
 
+    /// Returns nil on success, or an error message.
+    func createEvent(_ body: CreateCalendarEventBody, month: Date) async -> String? {
+        do {
+            _ = try await client.post("/api/creator/command-center/calendar", body: body) as IdResponse
+            await loadCalendar(month: month)
+            return nil
+        } catch {
+            return (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    func updateEvent(id: String, body: UpdateCalendarEventBody, month: Date) async -> String? {
+        do {
+            _ = try await client.patch("/api/creator/command-center/calendar/\(id)", body: body) as OkResponse
+            await loadCalendar(month: month)
+            return nil
+        } catch {
+            return (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    func deleteEvent(id: String, month: Date) async -> String? {
+        do {
+            _ = try await client.delete("/api/creator/command-center/calendar/\(id)") as OkResponse
+            await loadCalendar(month: month)
+            return nil
+        } catch {
+            return (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
+    }
+
+    var projectOptions: [CreatorProject] { projects }
+
     private func fetchCalendar(month: Date) async -> [CommandCenterCalendarEvent] {
         let monthKey = DateParser.monthKey(month)
         do {
@@ -520,5 +599,17 @@ private final class CommandCenterViewModel: ObservableObject {
             return api.errorDescription ?? "Please sign in again."
         }
         return (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+    }
+}
+
+enum CalendarSheetRoute: Identifiable {
+    case new
+    case edit(CommandCenterCalendarEvent)
+
+    var id: String {
+        switch self {
+        case .new: return "new"
+        case .edit(let event): return event.id
+        }
     }
 }

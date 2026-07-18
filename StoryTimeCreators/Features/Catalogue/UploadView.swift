@@ -12,6 +12,7 @@ struct UploadView: View {
     @State private var videoItem: PhotosPickerItem?
     @State private var trailerItem: PhotosPickerItem?
     @State private var showMoreTypes = false
+    @State private var genreQuery = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -219,7 +220,7 @@ struct UploadView: View {
                 .font(STFont.body(12, weight: .medium))
                 .foregroundStyle(STColor.textMuted)
 
-            FlowGenreChips(selected: $vm.selectedGenres, options: CatalogueContentType.coreGenres)
+            GenreSearchSelect(selected: $vm.selectedGenres, query: $genreQuery)
         }
         .padding(16)
         .glassPanel()
@@ -551,35 +552,141 @@ enum CatalogueContentType: String, CaseIterable, Identifiable {
         "Romance", "Sci-Fi", "Sport", "Thriller", "War", "Western",
         "Indie", "Coming-of-Age", "Dark Comedy", "Romantic Comedy",
     ]
+
+    /// Full catalogue genre list — mirrors web `CATALOGUE_GENRES`.
+    static let allGenres = [
+        "Action", "Adventure", "Animation", "Anime", "Biography", "Comedy", "Crime",
+        "Documentary", "Drama", "Family", "Fantasy", "History", "Horror", "Music",
+        "Musical", "Mystery", "Romance", "Sci-Fi", "Sport", "Thriller", "War", "Western",
+        "Dark Comedy", "Romantic Comedy", "Satire", "Parody", "Slapstick", "Coming-of-Age",
+        "Slice of Life", "Anthology", "Experimental", "Avant-Garde", "Art House", "Indie",
+        "Short Form", "Feature", "Miniseries", "Limited Series", "Reality", "Unscripted",
+        "Variety", "Talk Show", "Game Show", "Sketch Comedy", "Stand-Up", "Live Performance",
+        "Concert Film", "Music Video", "Podcast", "Interview", "News / Current Affairs",
+        "Action-Comedy", "Action-Thriller", "Psychological Thriller", "Political Thriller",
+        "Conspiracy Thriller", "Legal Drama", "Medical Drama", "Police Procedural", "Detective",
+        "Noir", "Neo-Noir", "Heist", "Spy / Espionage", "Survival", "Disaster", "Found Footage",
+        "Supernatural", "Paranormal", "Ghost Story", "Vampire", "Zombie", "Monster",
+        "Creature Feature", "Slasher", "Body Horror", "Folk Horror", "Gothic", "Mythology",
+        "Fairy Tale", "Sword & Sorcery", "Epic Fantasy", "Urban Fantasy", "Space Opera",
+        "Hard Sci-Fi", "Cyberpunk", "Steampunk", "Dystopian", "Utopian", "Post-Apocalyptic",
+        "Time Travel", "Alternate History", "Superhero", "Martial Arts", "Wuxia", "Samurai",
+        "Mecha", "Kaiju", "Nature", "Wildlife", "Natural History", "Environment", "Conservation",
+        "Science", "Technology", "Space / Astronomy", "Ocean / Marine", "Travel",
+        "Adventure Travel", "Expedition", "Food & Culinary", "Lifestyle", "Home & Garden",
+        "Fashion", "Design", "Architecture", "Art & Culture", "Photography", "True Crime",
+        "Investigative", "Social Issue", "Social Commentary", "Politics", "Human Rights",
+        "Education", "How-To / Instructional", "Faith & Spirituality", "Religion", "Philosophy",
+        "Health & Wellness", "Mental Health", "Disability Stories", "LGBTQ+", "Women's Stories",
+        "Youth / Teen", "Children", "Kids & Family", "Educational Kids", "Sports Drama",
+        "Sports Documentary", "Football / Soccer", "Rugby", "Cricket", "Athletics",
+        "Combat Sports", "Motorsport", "Extreme Sports", "Esports", "Period Romance",
+        "Contemporary Romance", "Love Story", "Melodrama", "Soap", "Telenovela", "Afro-Futurism",
+        "Afro-Fantasy", "African Cinema", "Nollywood", "South African", "Township Drama",
+        "Township Comedy", "Kasi Story", "Oral Tradition / Folklore", "Indigenous Stories",
+        "Pan-African", "Diaspora", "Colonial History", "Liberation Struggle", "Apartheid Stories",
+        "Ubuntu Stories", "Period Drama", "Historical Drama", "Costume Drama", "Biopic", "Memoir",
+        "Autobiography", "War Documentary", "Military", "Feel-Good", "Inspirational",
+        "Motivational", "Tearjerker", "Whodunnit", "Courtroom", "Workplace", "Campus / School",
+        "Road Movie", "Buddy Film", "Ensemble", "Mockumentary", "Meta / Self-Referential",
+        "Silent / Mostly Silent", "Black & White", "Stop-Motion", "Claymation", "3D Animation",
+        "2D Animation", "Mixed Media", "VR / Immersive", "Interactive", "Other",
+    ]
 }
 
 enum UploadAssetSlot: String {
     case poster, backdrop, video, trailer, script
 }
 
-// MARK: - Genre chips
+// MARK: - Genre search + multi-select (mirrors web GenreMultiSelect)
 
-private struct FlowGenreChips: View {
+private struct GenreSearchSelect: View {
     @Binding var selected: Set<String>
-    let options: [String]
+    @Binding var query: String
+
+    private var filtered: [String] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        let all = CatalogueContentType.allGenres
+        if q.isEmpty { return all }
+        return all.filter { $0.lowercased().contains(q) }
+    }
 
     var body: some View {
-        FlexibleChipWrap(items: options) { genre in
-            let on = selected.contains(genre)
-            Button {
-                if on { selected.remove(genre) } else { selected.insert(genre) }
-            } label: {
-                Text(genre)
-                    .font(STFont.body(12, weight: .medium))
-                    .foregroundStyle(on ? .black : STColor.textPrimary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(
-                        Capsule().fill(on ? AnyShapeStyle(STColor.brandGradient) : AnyShapeStyle(STColor.surfaceElevated))
-                    )
-                    .overlay(Capsule().stroke(STColor.border.opacity(on ? 0 : 1)))
+        VStack(alignment: .leading, spacing: 12) {
+            // Selected chips
+            if !selected.isEmpty {
+                FlexibleChipWrap(items: selected.sorted()) { genre in
+                    Button {
+                        selected.remove(genre)
+                    } label: {
+                        HStack(spacing: 5) {
+                            Text(genre)
+                                .font(STFont.body(12, weight: .semibold))
+                                .foregroundStyle(.black)
+                            Image(systemName: "xmark")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(.black.opacity(0.7))
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Capsule().fill(STColor.brandGradient))
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            .buttonStyle(.plain)
+
+            // Search field
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13))
+                    .foregroundStyle(STColor.textMuted)
+                TextField("Search genres…", text: $query)
+                    .font(STFont.body(14))
+                    .foregroundStyle(STColor.textPrimary)
+                    .autocorrectionDisabled()
+                if !query.isEmpty {
+                    Button { query = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(STColor.textMuted)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 12).fill(STColor.surfaceElevated))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(STColor.border))
+
+            // Filtered results
+            if filtered.isEmpty {
+                Text("No genres match “\(query)”.")
+                    .font(STFont.body(12))
+                    .foregroundStyle(STColor.textMuted)
+            } else {
+                ScrollView {
+                    FlexibleChipWrap(items: filtered) { genre in
+                        let on = selected.contains(genre)
+                        Button {
+                            if on { selected.remove(genre) } else { selected.insert(genre) }
+                        } label: {
+                            Text(genre)
+                                .font(STFont.body(12, weight: .medium))
+                                .foregroundStyle(on ? .black : STColor.textPrimary)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(
+                                    Capsule().fill(on ? AnyShapeStyle(STColor.brandGradient) : AnyShapeStyle(STColor.surfaceElevated))
+                                )
+                                .overlay(Capsule().stroke(STColor.border.opacity(on ? 0 : 1)))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .frame(maxHeight: 240)
+            }
+
+            Text("\(filtered.count) shown · \(selected.count) selected")
+                .font(STFont.body(10))
+                .foregroundStyle(STColor.textMuted)
         }
     }
 }

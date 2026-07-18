@@ -207,3 +207,152 @@ struct CalendarGridView: View {
             .joined(separator: " · ")
     }
 }
+
+// MARK: - Event editor (create / edit / delete manual events)
+
+struct CalendarEventEditorSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let event: CommandCenterCalendarEvent?
+    let defaultDate: Date
+    let projects: [CreatorProject]
+    /// Returns nil on success, or an error message.
+    let onSave: (CreateCalendarEventBody) async -> String?
+    let onDelete: (() async -> String?)?
+
+    @State private var title = ""
+    @State private var notes = ""
+    @State private var allDay = true
+    @State private var startAt = Date()
+    @State private var hasEnd = false
+    @State private var endAt = Date()
+    @State private var projectId: String = ""
+    @State private var visibility = "PERSONAL"
+    @State private var error: String?
+    @State private var isSaving = false
+    @State private var isDeleting = false
+
+    private var isEditing: Bool { event != nil }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Event") {
+                    TextField("Title", text: $title)
+                    TextField("Notes", text: $notes, axis: .vertical)
+                        .lineLimit(2...5)
+                }
+
+                Section("When") {
+                    Toggle("All day", isOn: $allDay)
+                    DatePicker(
+                        "Start",
+                        selection: $startAt,
+                        displayedComponents: allDay ? [.date] : [.date, .hourAndMinute]
+                    )
+                    Toggle("Set end time", isOn: $hasEnd)
+                    if hasEnd {
+                        DatePicker(
+                            "End",
+                            selection: $endAt,
+                            displayedComponents: allDay ? [.date] : [.date, .hourAndMinute]
+                        )
+                    }
+                }
+
+                Section("Link") {
+                    Picker("Project", selection: $projectId) {
+                        Text("None").tag("")
+                        ForEach(projects) { project in
+                            Text(project.title).tag(project.id)
+                        }
+                    }
+                    Picker("Visibility", selection: $visibility) {
+                        Text("Personal").tag("PERSONAL")
+                        Text("Team").tag("TEAM")
+                    }
+                }
+
+                if let error {
+                    Section {
+                        Text(error)
+                            .font(STFont.body(13))
+                            .foregroundStyle(STColor.danger)
+                    }
+                }
+
+                if isEditing, let onDelete {
+                    Section {
+                        Button(role: .destructive) {
+                            Task {
+                                isDeleting = true
+                                let err = await onDelete()
+                                isDeleting = false
+                                if let err { error = err } else { dismiss() }
+                            }
+                        } label: {
+                            HStack {
+                                if isDeleting { ProgressView() }
+                                Text("Delete event")
+                            }
+                        }
+                        .disabled(isDeleting)
+                    }
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(STColor.background)
+            .navigationTitle(isEditing ? "Edit event" : "New event")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(isEditing ? "Save" : "Add") { save() }
+                        .disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSaving)
+                }
+            }
+            .onAppear(perform: prefill)
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private func prefill() {
+        guard let event else {
+            startAt = defaultDate
+            endAt = defaultDate
+            return
+        }
+        title = event.title
+        notes = event.description ?? ""
+        allDay = event.allDay ?? true
+        visibility = event.visibility ?? "PERSONAL"
+        projectId = event.projectId ?? ""
+        if let start = event.startDate { startAt = start }
+        if let end = DateParser.parse(event.endAt) {
+            endAt = end
+            hasEnd = true
+        }
+    }
+
+    private func save() {
+        Task {
+            isSaving = true
+            error = nil
+            let body = CreateCalendarEventBody(
+                title: title.trimmingCharacters(in: .whitespacesAndNewlines),
+                description: notes.isEmpty ? nil : notes,
+                startAt: DateParser.iso(startAt),
+                endAt: hasEnd ? DateParser.iso(endAt) : nil,
+                allDay: allDay,
+                visibility: visibility,
+                projectId: projectId.isEmpty ? nil : projectId,
+                assigneeId: nil
+            )
+            let err = await onSave(body)
+            isSaving = false
+            if let err { error = err } else { dismiss() }
+        }
+    }
+}

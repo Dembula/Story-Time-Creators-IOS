@@ -67,9 +67,42 @@ struct CreatorProject: Codable, Identifiable, Hashable {
 }
 
 struct PipelineRollup: Codable, Hashable {
-    var overallPercent: Double?
-    var completedTools: Int?
-    var totalTools: Int?
+    // Fields returned by GET /api/creator/projects → project.pipelineRollup
+    var activeStep: Int?
+    var totalTracked: Int?
+    var completeCount: Int?
+    var inProgressCount: Int?
+    var skippedCount: Int?
+    var notStartedCount: Int?
+    var progressPercent: Double?
+    var phaseSummaries: PipelinePhaseSummaries?
+
+    // Backward-compatible accessors used across the UI.
+    var overallPercent: Double? { progressPercent }
+
+    /// Tools counted as "done" for the fraction — complete + auto-skipped earlier phases,
+    /// matching how the server derives progressPercent.
+    var completedTools: Int? {
+        guard completeCount != nil || skippedCount != nil else { return nil }
+        return (completeCount ?? 0) + (skippedCount ?? 0)
+    }
+
+    var totalTools: Int? { totalTracked }
+
+    var inProgress: Int { inProgressCount ?? 0 }
+}
+
+struct PipelinePhaseSummaries: Codable, Hashable {
+    var pre: PipelinePhaseSummary?
+    var prod: PipelinePhaseSummary?
+    var post: PipelinePhaseSummary?
+}
+
+struct PipelinePhaseSummary: Codable, Hashable {
+    var done: Int?
+    var skipped: Int?
+    var inProgress: Int?
+    var total: Int?
 }
 
 struct ToolProgress: Codable, Hashable, Identifiable {
