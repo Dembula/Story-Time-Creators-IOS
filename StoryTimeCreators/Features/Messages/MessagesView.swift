@@ -147,8 +147,8 @@ struct MessagesView: View {
 
 private struct ConversationDetailView: View {
     @EnvironmentObject private var auth: AuthService
-    @ObservedObject var vm: MessagesHubViewModel
     let route: MessageThreadRoute
+    @ObservedObject var vm: MessagesHubViewModel
 
     @State private var draft = ""
 

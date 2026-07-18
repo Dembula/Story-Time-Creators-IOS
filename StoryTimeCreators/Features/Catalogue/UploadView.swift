@@ -227,8 +227,18 @@ struct UploadView: View {
     }
 
     private var mediaStep: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text(vm.type.isLongForm
+        // Read main-actor VM state here (body scope) so the picker/button label
+        // closures capture plain Sendable values instead of the view model.
+        let isLongForm = vm.type.isLongForm
+        let posterDone = vm.posterUrl != nil
+        let backdropDone = vm.backdropUrl != nil
+        let videoDone = vm.videoUrl != nil
+        let trailerDone = vm.trailerUrl != nil
+        let scriptDone = vm.scriptUrl != nil
+        let busy = vm.busySlot
+
+        return VStack(alignment: .leading, spacing: 14) {
+            Text(isLongForm
                  ? "Long-form titles use episode uploads on web. Add poster, trailer, and assets here for your draft."
                  : "Upload the same asset slots as the web studio: main video, trailer, poster, backdrop, and script.")
                 .font(STFont.body(12))
@@ -237,10 +247,10 @@ struct UploadView: View {
             PhotosPicker(selection: $posterItem, matching: .images) {
                 assetLabel(
                     title: "Poster",
-                    subtitle: vm.posterUrl == nil ? "Cover image" : "Uploaded",
+                    subtitle: posterDone ? "Uploaded" : "Cover image",
                     icon: "photo",
-                    done: vm.posterUrl != nil,
-                    loading: vm.busySlot == .poster
+                    done: posterDone,
+                    loading: busy == .poster
                 )
             }
             .onChange(of: posterItem) { _, item in
@@ -250,24 +260,24 @@ struct UploadView: View {
             PhotosPicker(selection: $backdropItem, matching: .images) {
                 assetLabel(
                     title: "Backdrop",
-                    subtitle: vm.backdropUrl == nil ? "Wide hero image" : "Uploaded",
+                    subtitle: backdropDone ? "Uploaded" : "Wide hero image",
                     icon: "rectangle.on.rectangle",
-                    done: vm.backdropUrl != nil,
-                    loading: vm.busySlot == .backdrop
+                    done: backdropDone,
+                    loading: busy == .backdrop
                 )
             }
             .onChange(of: backdropItem) { _, item in
                 Task { await vm.uploadPhotos(item, slot: .backdrop) }
             }
 
-            if !vm.type.isLongForm {
+            if !isLongForm {
                 PhotosPicker(selection: $videoItem, matching: .videos) {
                     assetLabel(
                         title: "Main video",
-                        subtitle: vm.videoUrl == nil ? "Feature film / short" : "Uploaded",
+                        subtitle: videoDone ? "Uploaded" : "Feature film / short",
                         icon: "film",
-                        done: vm.videoUrl != nil,
-                        loading: vm.busySlot == .video
+                        done: videoDone,
+                        loading: busy == .video
                     )
                 }
                 .onChange(of: videoItem) { _, item in
@@ -278,10 +288,10 @@ struct UploadView: View {
             PhotosPicker(selection: $trailerItem, matching: .videos) {
                 assetLabel(
                     title: "Trailer",
-                    subtitle: vm.trailerUrl == nil ? "Optional promo cut" : "Uploaded",
+                    subtitle: trailerDone ? "Uploaded" : "Optional promo cut",
                     icon: "play.rectangle",
-                    done: vm.trailerUrl != nil,
-                    loading: vm.busySlot == .trailer
+                    done: trailerDone,
+                    loading: busy == .trailer
                 )
             }
             .onChange(of: trailerItem) { _, item in
@@ -294,16 +304,16 @@ struct UploadView: View {
             } label: {
                 assetLabel(
                     title: "Script / document",
-                    subtitle: vm.scriptUrl == nil ? "PDF or text" : "Uploaded",
+                    subtitle: scriptDone ? "Uploaded" : "PDF or text",
                     icon: "doc.richtext",
-                    done: vm.scriptUrl != nil,
-                    loading: vm.busySlot == .script
+                    done: scriptDone,
+                    loading: busy == .script
                 )
             }
             .buttonStyle(.plain)
 
             Button {
-                vm.pendingImportSlot = vm.type.isLongForm ? .trailer : .video
+                vm.pendingImportSlot = isLongForm ? .trailer : .video
                 vm.showFileImporter = true
             } label: {
                 assetLabel(
