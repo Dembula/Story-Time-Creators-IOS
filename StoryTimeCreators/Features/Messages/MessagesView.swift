@@ -6,189 +6,257 @@ private enum MessagesTab: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+enum MessageThreadRoute: Identifiable, Hashable {
+    case network(peerId: String, title: String)
+    case inbox(peerId: String, title: String)
+
+    var id: String {
+        switch self {
+        case .network(let peer, _): return "n-\(peer)"
+        case .inbox(let peer, _): return "i-\(peer)"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .network(_, let t), .inbox(_, let t): return t
+        }
+    }
+
+    var peerId: String {
+        switch self {
+        case .network(let p, _), .inbox(let p, _): return p
+        }
+    }
+
+    var isNetwork: Bool {
+        if case .network = self { return true }
+        return false
+    }
+}
+
 struct MessagesView: View {
     @EnvironmentObject private var auth: AuthService
     @StateObject private var vm = MessagesHubViewModel()
     @State private var tab: MessagesTab = .network
-    @State private var draft = ""
+    @State private var route: MessageThreadRoute?
 
     var body: some View {
-        VStack(spacing: 0) {
-            Picker("Messages", selection: $tab) {
-                ForEach(MessagesTab.allCases) { t in
-                    Text(t.rawValue).tag(t)
+        NavigationStack {
+            VStack(spacing: 0) {
+                Picker("Messages", selection: $tab) {
+                    ForEach(MessagesTab.allCases) { t in
+                        Text(t.rawValue).tag(t)
+                    }
                 }
-            }
-            .pickerStyle(.segmented)
-            .padding(16)
+                .pickerStyle(.segmented)
+                .padding(16)
 
-            if tab == .network {
-                networkPane
-            } else {
-                inboxPane
+                threadList
+            }
+            .background(STColor.background)
+            .navigationDestination(item: $route) { route in
+                ConversationDetailView(route: route, vm: vm)
+                    .environmentObject(auth)
             }
         }
-        .background(STColor.background)
         .task { await vm.loadAll(auth: auth) }
-        .refreshable { await vm.loadAll(auth: auth) }
-        .onChange(of: vm.selectedNetworkPeerId) { _, peer in
-            if let peer { Task { await vm.loadNetworkThread(peerId: peer, auth: auth) } }
-        }
-        .onChange(of: vm.selectedInboxPeerId) { _, peer in
-            if let peer { Task { await vm.loadInboxThread(peerId: peer, auth: auth) } }
-        }
     }
 
-    private var networkPane: some View {
-        HStack(spacing: 0) {
-            ScrollView {
-                LazyVStack(spacing: 8) {
+    @ViewBuilder
+    private var threadList: some View {
+        ScrollView {
+            LazyVStack(spacing: 10) {
+                if tab == .network {
+                    if vm.networkConversations.isEmpty {
+                        EmptyStateView(
+                            title: "No conversations yet",
+                            subtitle: "Connect with creators, then message them from their profile.",
+                            systemImage: "bubble.left.and.bubble.right"
+                        )
+                        .padding(.top, 40)
+                    }
                     ForEach(vm.networkConversations) { conv in
                         let peer = conv.participants?.first
                         Button {
-                            vm.selectedNetworkPeerId = peer?.id
+                            route = .network(peerId: peer?.id ?? "", title: peer?.label ?? "Creator")
                         } label: {
                             threadRow(
                                 title: peer?.label ?? "Creator",
-                                preview: conv.lastMessage?.body ?? "No messages yet",
-                                selected: vm.selectedNetworkPeerId == peer?.id
+                                preview: conv.lastMessage?.body ?? "No messages yet"
                             )
                         }
                         .buttonStyle(.plain)
                     }
-                }
-                .padding(12)
-            }
-            .frame(maxWidth: vm.selectedNetworkPeerId == nil ? .infinity : 280)
-            .overlay(alignment: .trailing) { Rectangle().fill(STColor.border).frame(width: 1) }
-
-            if vm.selectedNetworkPeerId != nil {
-                conversationColumn(
-                    title: vm.selectedNetworkTitle,
-                    empty: vm.networkMessages.isEmpty,
-                    bubbles: vm.networkMessages.map { ($0.body ?? "", $0.sender?.id == auth.currentUser?.id, $0.sender?.label) },
-                    onSend: {
-                        let text = draft
-                        draft = ""
-                        if let peer = vm.selectedNetworkPeerId {
-                            Task { await vm.sendNetwork(peerId: peer, body: text, auth: auth) }
-                        }
+                } else {
+                    if vm.inboxThreads.isEmpty {
+                        EmptyStateView(
+                            title: "Marketplace inbox is empty",
+                            subtitle: "Booking threads from cast, crew, locations, and catering show up here.",
+                            systemImage: "tray"
+                        )
+                        .padding(.top, 40)
                     }
-                )
-            } else {
-                EmptyStateView(title: "Network messages", subtitle: "Connect with creators to chat.", systemImage: "bubble.left.and.bubble.right")
-                    .frame(maxWidth: .infinity)
-            }
-        }
-    }
-
-    private var inboxPane: some View {
-        HStack(spacing: 0) {
-            ScrollView {
-                LazyVStack(spacing: 8) {
                     ForEach(vm.inboxThreads) { thread in
-                        Button { vm.selectedInboxPeerId = thread.peerId } label: {
-                            threadRow(title: thread.title, preview: thread.preview, selected: vm.selectedInboxPeerId == thread.peerId)
+                        Button {
+                            route = .inbox(peerId: thread.peerId, title: thread.title)
+                        } label: {
+                            threadRow(title: thread.title, preview: thread.preview)
                         }
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(12)
             }
-            .frame(maxWidth: vm.selectedInboxPeerId == nil ? .infinity : 280)
-            .overlay(alignment: .trailing) { Rectangle().fill(STColor.border).frame(width: 1) }
-
-            if vm.selectedInboxPeerId != nil {
-                conversationColumn(
-                    title: vm.selectedInboxTitle,
-                    empty: vm.inboxMessages.isEmpty,
-                    bubbles: vm.inboxMessages.map { ($0.body, $0.senderId == auth.currentUser?.id, $0.sender?.name) },
-                    onSend: {
-                        let text = draft
-                        draft = ""
-                        if let peer = vm.selectedInboxPeerId {
-                            Task { await vm.sendInbox(peerId: peer, body: text, auth: auth) }
-                        }
-                    }
-                )
-            } else {
-                EmptyStateView(title: "Marketplace inbox", subtitle: "Booking threads from cast, crew, locations, and catering.", systemImage: "tray")
-                    .frame(maxWidth: .infinity)
-            }
+            .padding(16)
         }
+        .refreshable { await vm.loadAll(auth: auth) }
     }
 
-    private func threadRow(title: String, preview: String, selected: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(STFont.body(14, weight: .semibold)).foregroundStyle(STColor.textPrimary)
-            Text(preview).font(STFont.body(12)).foregroundStyle(STColor.textMuted).lineLimit(2)
+    private func threadRow(title: String, preview: String) -> some View {
+        HStack(spacing: 12) {
+            Circle()
+                .fill(STColor.primary.opacity(0.18))
+                .frame(width: 46, height: 46)
+                .overlay {
+                    Text(String(title.prefix(1)).uppercased())
+                        .font(STFont.display(18, weight: .bold))
+                        .foregroundStyle(STColor.primary)
+                }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(STFont.body(15, weight: .semibold))
+                    .foregroundStyle(STColor.textPrimary)
+                    .lineLimit(1)
+                Text(preview)
+                    .font(STFont.body(13))
+                    .foregroundStyle(STColor.textMuted)
+                    .lineLimit(1)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(STColor.textMuted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 14).fill(selected ? STColor.primary.opacity(0.14) : STColor.surface))
+        .padding(14)
+        .glassPanel()
+    }
+}
+
+// MARK: - Full-screen conversation
+
+private struct ConversationDetailView: View {
+    @EnvironmentObject private var auth: AuthService
+    @ObservedObject var vm: MessagesHubViewModel
+    let route: MessageThreadRoute
+
+    @State private var draft = ""
+
+    var body: some View {
+        VStack(spacing: 0) {
+            messagesScroll
+            inputBar
+        }
+        .background(STColor.background)
+        .navigationTitle(route.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await loadThread() }
     }
 
-    private func conversationColumn(
-        title: String,
-        empty: Bool,
-        bubbles: [(String, Bool, String?)],
-        onSend: @escaping () -> Void
-    ) -> some View {
-        VStack(spacing: 0) {
-            Text(title)
-                .font(STFont.display(16, weight: .semibold))
-                .foregroundStyle(STColor.textPrimary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
-                .overlay(alignment: .bottom) { Rectangle().fill(STColor.border).frame(height: 1) }
-
-            if empty {
-                EmptyStateView(title: "No messages yet", subtitle: "Say hello below.", systemImage: "bubble")
-                    .frame(maxHeight: .infinity)
-            } else {
+    @ViewBuilder
+    private var messagesScroll: some View {
+        if isEmpty {
+            EmptyStateView(title: "No messages yet", subtitle: "Say hello below.", systemImage: "bubble")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 10) {
-                        ForEach(Array(bubbles.enumerated()), id: \.offset) { _, bubble in
-                            messageBubble(text: bubble.0, mine: bubble.1, sender: bubble.2)
+                    LazyVStack(spacing: 10) {
+                        if route.isNetwork {
+                            ForEach(vm.networkMessages) { msg in
+                                bubble(text: msg.body ?? "", mine: msg.sender?.id == auth.currentUser?.id)
+                                    .id(msg.id)
+                            }
+                        } else {
+                            ForEach(vm.inboxMessages) { msg in
+                                bubble(text: msg.body, mine: msg.senderId == auth.currentUser?.id)
+                                    .id(msg.id)
+                            }
                         }
                     }
                     .padding(16)
                 }
-            }
-
-            HStack(spacing: 10) {
-                TextField("Message", text: $draft, axis: .vertical)
-                    .lineLimit(1...4)
-                    .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(STColor.surfaceElevated))
-                Button(action: onSend) {
-                    Image(systemName: "paperplane.fill")
-                        .foregroundStyle(.black)
-                        .padding(10)
-                        .background(Circle().fill(STColor.brandGradient))
+                .onChange(of: messageCount) { _, _ in
+                    withAnimation { proxy.scrollTo(lastMessageId, anchor: .bottom) }
                 }
-                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .onAppear {
+                    if let last = lastMessageId { proxy.scrollTo(last, anchor: .bottom) }
+                }
             }
-            .padding(16)
         }
-        .frame(maxWidth: .infinity)
     }
 
-    private func messageBubble(text: String, mine: Bool, sender: String?) -> some View {
-        VStack(alignment: mine ? .trailing : .leading, spacing: 4) {
-            if !mine, let sender {
-                Text(sender).font(STFont.body(10, weight: .semibold)).foregroundStyle(STColor.textMuted)
-            }
-            Text(text)
-                .font(STFont.body(14))
-                .foregroundStyle(mine ? .black : STColor.textPrimary)
+    private var inputBar: some View {
+        HStack(spacing: 10) {
+            TextField("Message", text: $draft, axis: .vertical)
+                .lineLimit(1...4)
                 .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(mine ? AnyShapeStyle(STColor.brandGradient) : AnyShapeStyle(STColor.surfaceElevated))
-                )
+                .background(RoundedRectangle(cornerRadius: 14).fill(STColor.surfaceElevated))
+            Button {
+                let text = draft
+                draft = ""
+                Task { await send(text) }
+            } label: {
+                Image(systemName: "paperplane.fill")
+                    .foregroundStyle(.black)
+                    .padding(12)
+                    .background(Circle().fill(STColor.brandGradient))
+            }
+            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
-        .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
+        .padding(16)
+        .overlay(alignment: .top) { Rectangle().fill(STColor.border).frame(height: 1) }
+    }
+
+    private func bubble(text: String, mine: Bool) -> some View {
+        Text(text)
+            .font(STFont.body(15))
+            .foregroundStyle(mine ? .black : STColor.textPrimary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(mine ? AnyShapeStyle(STColor.brandGradient) : AnyShapeStyle(STColor.surfaceElevated))
+            )
+            .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
+    }
+
+    private var isEmpty: Bool {
+        route.isNetwork ? vm.networkMessages.isEmpty : vm.inboxMessages.isEmpty
+    }
+
+    private var messageCount: Int {
+        route.isNetwork ? vm.networkMessages.count : vm.inboxMessages.count
+    }
+
+    private var lastMessageId: String? {
+        route.isNetwork ? vm.networkMessages.last?.id : vm.inboxMessages.last?.id
+    }
+
+    private func loadThread() async {
+        if route.isNetwork {
+            await vm.loadNetworkThread(peerId: route.peerId, auth: auth)
+        } else {
+            await vm.loadInboxThread(peerId: route.peerId, auth: auth)
+        }
+    }
+
+    private func send(_ text: String) async {
+        if route.isNetwork {
+            await vm.sendNetwork(peerId: route.peerId, body: text, auth: auth)
+        } else {
+            await vm.sendInbox(peerId: route.peerId, body: text, auth: auth)
+        }
     }
 }
 
@@ -338,18 +406,6 @@ private final class MessagesHubViewModel: ObservableObject {
     @Published var networkMessages: [NetworkChatMessage] = []
     @Published var inboxThreads: [InboxThreadRow] = []
     @Published var inboxMessages: [MarketplaceMessage] = []
-    @Published var selectedNetworkPeerId: String?
-    @Published var selectedInboxPeerId: String?
-
-    var selectedNetworkTitle: String {
-        networkConversations
-            .first(where: { $0.participants?.contains(where: { $0.id == selectedNetworkPeerId }) == true })?
-            .participants?.first?.label ?? "Chat"
-    }
-
-    var selectedInboxTitle: String {
-        inboxThreads.first(where: { $0.peerId == selectedInboxPeerId })?.title ?? "Messages"
-    }
 
     private let client = APIClient.shared
 
