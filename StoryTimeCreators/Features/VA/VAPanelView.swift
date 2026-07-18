@@ -3,6 +3,7 @@ import SwiftUI
 struct VAPanelView: View {
     @ObservedObject var controller: VAController
     @State private var input = ""
+    @FocusState private var inputFocused: Bool
 
     var body: some View {
         GeometryReader { geo in
@@ -37,7 +38,10 @@ struct VAPanelView: View {
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .trailing)
         }
-        .ignoresSafeArea(edges: .bottom)
+        // Extend into the home-indicator inset only. We intentionally do NOT ignore
+        // the keyboard region so the composer lifts above the keyboard when it opens
+        // and settles back when it closes.
+        .ignoresSafeArea(.container, edges: .bottom)
     }
 
     private var header: some View {
@@ -118,6 +122,9 @@ struct VAPanelView: View {
             .onChange(of: controller.messages.last?.text) { _, _ in
                 scrollToBottom(proxy: proxy)
             }
+            .onChange(of: inputFocused) { _, focused in
+                if focused { scrollToBottom(proxy: proxy) }
+            }
         }
     }
 
@@ -182,6 +189,7 @@ struct VAPanelView: View {
             TextField("Ask anything…", text: $input, axis: .vertical)
                 .lineLimit(1...4)
                 .textFieldStyle(.plain)
+                .focused($inputFocused)
                 .font(STFont.body(14))
                 .foregroundStyle(STColor.textPrimary)
                 .padding(.horizontal, 12)
