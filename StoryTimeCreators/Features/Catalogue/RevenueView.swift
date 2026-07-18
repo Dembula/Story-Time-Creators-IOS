@@ -59,12 +59,6 @@ struct RevenueView: View {
                             if let perStream = payload.perStreamRand {
                                 summaryRow("Per stream", value: vm.formatCurrency(perStream))
                             }
-                            if let pool = payload.creatorPool {
-                                summaryRow("Creator pool (60%)", value: vm.formatCurrency(pool))
-                            }
-                            if let viewerSub = payload.viewerSubRevenue {
-                                summaryRow("Viewer pool revenue", value: vm.formatCurrency(viewerSub))
-                            }
                             if let projected = payload.projectedRevenue {
                                 summaryRow("Projected", value: vm.formatCurrency(projected))
                             }
@@ -249,8 +243,6 @@ private struct RevenueAPIResponse: Decodable {
     var streamCount: Int?
     var perViewRand: Double?
     var perStreamRand: Double?
-    var creatorPool: Double?
-    var viewerSubRevenue: Double?
     var projectedRevenue: Double?
     var walletAvailable: Double?
     var walletTotalEarnings: Double?

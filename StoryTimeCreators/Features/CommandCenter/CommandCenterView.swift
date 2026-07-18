@@ -202,7 +202,7 @@ struct CommandCenterView: View {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                     StatTile(title: "Streams", value: "\(revenue.streamCount ?? 0)", icon: "film.fill")
                     StatTile(title: "Per view", value: formatZAR(revenue.perViewRand), icon: "chart.bar.fill")
-                    StatTile(title: "Pool", value: formatZAR(revenue.creatorPool), icon: "person.3.fill")
+                    StatTile(title: "Per stream", value: formatZAR(revenue.perStreamRand), icon: "play.circle.fill")
                 }
             } else {
                 EmptyStateView(title: "No revenue data", subtitle: "Publish catalogue titles to start earning.", systemImage: "chart.line.uptrend.xyaxis")
