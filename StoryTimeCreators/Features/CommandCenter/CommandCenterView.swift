@@ -33,6 +33,8 @@ struct CommandCenterView: View {
                 projectsSection
                 revenueSection
                 engagementSection
+                projectsAnalyticsSection
+                competitionSection
                 productionSection
                 topContentSection
                 calendarSection
@@ -231,6 +233,73 @@ struct CommandCenterView: View {
                     StatTile(title: "Comments", value: "\(e.totalComments ?? 0)", icon: "bubble.left.fill")
                     StatTile(title: "Ratings", value: "\(e.totalRatings ?? 0)", icon: "star.fill")
                     StatTile(title: "Watchlist", value: "\(e.watchlistCount ?? 0)", icon: "bookmark.fill")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var projectsAnalyticsSection: some View {
+        if let projects = vm.response?.analytics?.projects {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Project pipeline stats", trailing: "\(projects.total ?? 0) total")
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                    StatTile(title: "Projects", value: "\(projects.total ?? 0)", icon: "folder.fill")
+                    if let byPhase = projects.byPhase {
+                        ForEach(byPhase.keys.sorted().prefix(3), id: \.self) { key in
+                            StatTile(
+                                title: key.replacingOccurrences(of: "_", with: " ").capitalized,
+                                value: "\(byPhase[key] ?? 0)",
+                                icon: "chart.bar.fill"
+                            )
+                        }
+                    }
+                }
+                if let byStatus = projects.byStatus, !byStatus.isEmpty {
+                    HStack(spacing: 8) {
+                        ForEach(byStatus.keys.sorted().prefix(4), id: \.self) { key in
+                            VStack(spacing: 4) {
+                                Text("\(byStatus[key] ?? 0)")
+                                    .font(STFont.body(14, weight: .bold))
+                                    .foregroundStyle(STColor.textPrimary)
+                                Text(key.replacingOccurrences(of: "_", with: " "))
+                                    .font(STFont.body(9))
+                                    .foregroundStyle(STColor.textMuted)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(STColor.surfaceElevated))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var competitionSection: some View {
+        if let competition = vm.response?.analytics?.competition {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionHeader(title: "Competitions")
+                HStack(spacing: 12) {
+                    StatTile(
+                        title: "Rank",
+                        value: competition.rank.map { "#\($0)" } ?? "—",
+                        icon: "trophy.fill"
+                    )
+                    StatTile(
+                        title: "Votes",
+                        value: "\(competition.voteCount ?? 0)",
+                        icon: "hand.thumbsup.fill"
+                    )
+                }
+                if let name = competition.periodName {
+                    Text(name)
+                        .font(STFont.body(13, weight: .medium))
+                        .foregroundStyle(STColor.textSecondary)
+                        .padding(.horizontal, 4)
                 }
             }
         }

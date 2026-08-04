@@ -4,6 +4,8 @@ struct MainShellView: View {
     @EnvironmentObject private var router: AppRouter
     @EnvironmentObject private var auth: AuthService
     @StateObject private var va = VAController()
+    @State private var showPlanSetup = false
+    @State private var autoOpenedPlan = false
 
     var body: some View {
         ZStack(alignment: .leading) {
@@ -11,6 +13,9 @@ struct MainShellView: View {
 
             VStack(spacing: 0) {
                 topBar
+                if auth.needsPlanSetup {
+                    planBanner
+                }
                 if shouldShowToolReturn {
                     ToolReturnBar()
                 }
@@ -54,6 +59,58 @@ struct MainShellView: View {
                     }
                 }
         )
+        .onAppear {
+            if auth.needsPlanSetup && !autoOpenedPlan {
+                autoOpenedPlan = true
+                showPlanSetup = true
+            }
+        }
+        .onChange(of: auth.needsPlanSetup) { _, needs in
+            if needs { showPlanSetup = true }
+        }
+        .sheet(isPresented: $showPlanSetup) {
+            AuthenticatedWebBrowser(
+                url: onboardingURL,
+                title: "Creator plan",
+                mode: .account,
+                onFinished: {
+                    Task {
+                        await auth.refreshPackageGate()
+                        _ = await auth.establishSessionFromCookies()
+                    }
+                }
+            )
+        }
+    }
+
+    private var onboardingURL: URL {
+        if let path = auth.pendingOnboardingPath, !path.isEmpty {
+            return AppConfig.webURL(path: path)
+        }
+        return AppConfig.creatorLicenseOnboardingURL
+    }
+
+    private var planBanner: some View {
+        Button { showPlanSetup = true } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "creditcard.fill")
+                    .foregroundStyle(.black)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Finish your creator plan")
+                        .font(STFont.body(13, weight: .bold))
+                        .foregroundStyle(.black)
+                    Text("Choose pay-per-film or unlimited uploads, then return here.")
+                        .font(STFont.body(11))
+                        .foregroundStyle(.black.opacity(0.75))
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(.black.opacity(0.7))
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 0).fill(STColor.brandGradient))
+        }
+        .buttonStyle(.plain)
     }
 
     private var shouldShowToolReturn: Bool {

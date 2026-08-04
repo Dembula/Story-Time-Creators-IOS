@@ -7,13 +7,38 @@ final class AuthService: ObservableObject {
 
     @Published private(set) var isAuthenticated = false
     @Published private(set) var currentUser: CreatorUser?
+    /// Relative path on story-time.online when license/plan is incomplete (e.g. /creator/onboarding/license).
+    @Published private(set) var pendingOnboardingPath: String?
     @Published var lastError: String?
     @Published var isBusy = false
 
     private let client = APIClient.shared
 
+    var needsPlanSetup: Bool {
+        guard let path = pendingOnboardingPath, !path.isEmpty else { return false }
+        return path.contains("onboarding") || path.contains("license") || path.contains("subscription")
+    }
+
     func applyProfile(_ user: CreatorUser) {
         currentUser = user
+    }
+
+    /// After web signup/checkout, re-read /api/me using exported cookies.
+    @discardableResult
+    func establishSessionFromCookies() async -> Bool {
+        do {
+            let me: CreatorUser = try await client.get("/api/me")
+            guard me.isCreatorPortalEligible else {
+                clearLocalSession()
+                return false
+            }
+            currentUser = me
+            isAuthenticated = true
+            await refreshPackageGate()
+            return true
+        } catch {
+            return false
+        }
     }
 
     func restoreSession() async {
@@ -25,6 +50,7 @@ final class AuthService: ObservableObject {
             }
             currentUser = me
             isAuthenticated = true
+            await refreshPackageGate()
         } catch {
             clearLocalSession()
         }
@@ -35,48 +61,20 @@ final class AuthService: ObservableObject {
         lastError = nil
         defer { isBusy = false }
 
+        let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         do {
-            let csrf: CSRFResponse = try await client.get("/api/auth/csrf")
-            let fields: [String: String] = [
-                "csrfToken": csrf.csrfToken,
-                "email": email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
-                "password": password,
-                "selectedRole": AppConfig.creatorRole,
-                "json": "true",
-                "redirect": "false",
-                "callbackUrl": "/creator/command-center",
-            ]
-            let (data, http) = try await client.postForm(
-                path: "/api/auth/callback/credentials-creator",
-                fields: fields
+            // Try film creator first, then music creator (same credentials provider; role selects session).
+            if try await attemptCredentialsSignIn(email: trimmed, password: password, role: AppConfig.creatorRole) {
+                return
+            }
+            if try await attemptCredentialsSignIn(email: trimmed, password: password, role: "MUSIC_CREATOR") {
+                return
+            }
+            clearSessionCookies()
+            throw APIError.http(
+                403,
+                "This app is for film and music creator accounts. Company marketplaces use the web studio."
             )
-
-            if !(200..<400).contains(http.statusCode) {
-                let msg = String(data: data, encoding: .utf8) ?? "Sign in failed."
-                throw APIError.http(http.statusCode, msg)
-            }
-
-            if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                if let error = obj["error"] as? String, !error.isEmpty {
-                    throw APIError.http(
-                        401,
-                        error == "CredentialsSignin"
-                            ? "Invalid email or password."
-                            : error
-                    )
-                }
-            }
-
-            let me: CreatorUser = try await client.get("/api/me")
-            guard me.isCreatorPortalEligible else {
-                clearSessionCookies()
-                throw APIError.http(
-                    403,
-                    "This app is for content creator accounts only."
-                )
-            }
-            currentUser = me
-            isAuthenticated = true
         } catch let api as APIError {
             lastError = api.errorDescription
             clearLocalSession()
@@ -84,6 +82,70 @@ final class AuthService: ObservableObject {
             lastError = error.localizedDescription
             clearLocalSession()
         }
+    }
+
+    /// Returns true if session established; false if credentials ok but role ineligible; throws on auth failure.
+    private func attemptCredentialsSignIn(email: String, password: String, role: String) async throws -> Bool {
+        let csrf: CSRFResponse = try await client.get("/api/auth/csrf")
+        let fields: [String: String] = [
+            "csrfToken": csrf.csrfToken,
+            "email": email,
+            "password": password,
+            "selectedRole": role,
+            "json": "true",
+            "redirect": "false",
+            "callbackUrl": role == "MUSIC_CREATOR" ? "/music-creator/dashboard" : "/creator/command-center",
+        ]
+        let (data, http) = try await client.postForm(
+            path: "/api/auth/callback/credentials-creator",
+            fields: fields
+        )
+
+        if !(200..<400).contains(http.statusCode) {
+            let msg = String(data: data, encoding: .utf8) ?? "Sign in failed."
+            throw APIError.http(http.statusCode, msg)
+        }
+
+        if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            if let error = obj["error"] as? String, !error.isEmpty {
+                throw APIError.http(
+                    401,
+                    error == "CredentialsSignin"
+                        ? "Invalid email or password."
+                        : error
+                )
+            }
+        }
+
+        let me: CreatorUser = try await client.get("/api/me")
+        guard me.isCreatorPortalEligible else {
+            clearSessionCookies()
+            return false
+        }
+        currentUser = me
+        isAuthenticated = true
+        await refreshPackageGate()
+        return true
+    }
+
+    /// Mirrors web entry-redirect: unfinished license → onboarding path.
+    func refreshPackageGate() async {
+        struct EntryRedirect: Decodable { var path: String? }
+        do {
+            let entry: EntryRedirect = try await client.get("/api/auth/entry-redirect")
+            let path = entry.path ?? ""
+            if path.contains("onboarding") || path.contains("license") || path.contains("subscription") {
+                pendingOnboardingPath = path
+            } else {
+                pendingOnboardingPath = nil
+            }
+        } catch {
+            // Keep current gate — non-fatal (endpoint may 401 after partial session).
+        }
+    }
+
+    func clearOnboardingGate() {
+        pendingOnboardingPath = nil
     }
 
     func signOut() async {
@@ -103,6 +165,7 @@ final class AuthService: ObservableObject {
     private func clearLocalSession() {
         currentUser = nil
         isAuthenticated = false
+        pendingOnboardingPath = nil
     }
 
     private func clearSessionCookies() {

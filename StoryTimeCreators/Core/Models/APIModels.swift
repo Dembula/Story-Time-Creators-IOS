@@ -542,6 +542,18 @@ struct CreateContentBody: Encodable {
     var reviewStatus: String?
 }
 
+/// Response from POST /api/creator/content (may include pay-per-film checkout).
+struct CreateContentResult: Decodable {
+    var id: String?
+    var title: String?
+    var reviewStatus: String?
+    var requiresPayment: Bool?
+    var checkoutUrl: String?
+    var paymentRecordId: String?
+    var uploadFee: Double?
+    var error: String?
+}
+
 struct ContentDetailResponse: Codable {
     // GET ?id= returns single item directly
 }

@@ -14,6 +14,11 @@ struct CreatorUser: Codable, Identifiable, Equatable {
     var networkHandle: String?
     var professionalName: String?
     var phoneNumber: String?
+    var primaryRole: String?
+    var skills: String?
+    var expertiseAreas: String?
+    var yearsExperience: Int?
+    var availabilityStatus: String?
     var platformRoles: [String]?
     var reputationScore: Double?
     var multiRole: Bool?
@@ -31,7 +36,8 @@ struct CreatorUser: Codable, Identifiable, Equatable {
 
     var isCreatorPortalEligible: Bool {
         let roles = Set((platformRoles ?? []) + [effectiveRole].filter { !$0.isEmpty })
-        return roles.contains(AppConfig.creatorRole)
+        // Catalogue / production shell is for film + music creators. Other studio types use web.
+        return roles.contains(AppConfig.creatorRole) || roles.contains("MUSIC_CREATOR")
     }
 }
 

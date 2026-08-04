@@ -106,6 +106,17 @@ struct CatalogueView: View {
 struct ContentDetailView: View {
     let item: CreatorContentItem
     @Environment(\.dismiss) private var dismiss
+    @State private var webDestination: WebDestination?
+
+    private struct WebDestination: Identifiable {
+        let id = UUID()
+        let url: URL
+        let title: String
+    }
+
+    private var needsPayment: Bool {
+        (item.reviewStatus ?? "").uppercased() == "AWAITING_PAYMENT"
+    }
 
     var body: some View {
         NavigationStack {
@@ -127,6 +138,33 @@ struct ContentDetailView: View {
                     }
                     Text(item.title).font(STFont.display(22, weight: .bold)).foregroundStyle(STColor.textPrimary)
                     metaGrid
+
+                    if needsPayment {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Payment required")
+                                .font(STFont.body(14, weight: .bold))
+                                .foregroundStyle(STColor.textPrimary)
+                            Text("This title is awaiting the pay-per-film upload fee. Complete payment on the secure Story Time studio window to send it to review.")
+                                .font(STFont.body(12))
+                                .foregroundStyle(STColor.textSecondary)
+                            Button {
+                                webDestination = WebDestination(
+                                    url: AppConfig.creatorCatalogueURL,
+                                    title: "Complete payment"
+                                )
+                            } label: {
+                                Text("Open studio payment")
+                                    .font(STFont.body(14, weight: .semibold))
+                                    .foregroundStyle(.black)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                                    .background(Capsule().fill(STColor.brandGradient))
+                            }
+                        }
+                        .padding(14)
+                        .glassPanel()
+                    }
+
                     if let description = item.description, !description.isEmpty {
                         Text(description).font(STFont.body(14)).foregroundStyle(STColor.textSecondary)
                     }
@@ -154,6 +192,9 @@ struct ContentDetailView: View {
             .navigationTitle("Title details")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
+        }
+        .sheet(item: $webDestination) { dest in
+            AuthenticatedWebBrowser(url: dest.url, title: dest.title, mode: .account)
         }
     }
 

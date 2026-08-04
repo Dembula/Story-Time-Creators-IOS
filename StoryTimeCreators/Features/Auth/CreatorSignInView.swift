@@ -4,6 +4,8 @@ struct CreatorSignInView: View {
     @EnvironmentObject private var auth: AuthService
     @State private var email = ""
     @State private var password = ""
+    @State private var showSignUp = false
+    @State private var showForgotPassword = false
     @FocusState private var focused: Field?
 
     private enum Field { case email, password }
@@ -14,6 +16,9 @@ struct CreatorSignInView: View {
                 header
                 formCard
                     .padding(.horizontal, 20)
+                    .padding(.bottom, 24)
+                legalNote
+                    .padding(.horizontal, 28)
                     .padding(.bottom, 40)
             }
         }
@@ -30,6 +35,21 @@ struct CreatorSignInView: View {
             .ignoresSafeArea()
         )
         .scrollDismissesKeyboard(.interactively)
+        .sheet(isPresented: $showSignUp) {
+            AuthenticatedWebBrowser(
+                url: AppConfig.creatorSignUpURLForApp,
+                title: "Create account",
+                mode: .signUp,
+                onSessionEstablished: {
+                    showSignUp = false
+                    Task { _ = await auth.establishSessionFromCookies() }
+                }
+            )
+        }
+        .sheet(isPresented: $showForgotPassword) {
+            SafariView(url: AppConfig.forgotPasswordURL)
+                .ignoresSafeArea()
+        }
     }
 
     private var header: some View {
@@ -66,7 +86,7 @@ struct CreatorSignInView: View {
             Text("Sign In")
                 .font(STFont.display(24, weight: .semibold))
                 .foregroundStyle(STColor.textPrimary)
-            Text("Sign in with your content creator email and password to open your dashboard.")
+            Text("Use your content creator email and password. New accounts are created securely in the Story Time studio window — including plan choice and payment when required.")
                 .font(STFont.body(14))
                 .foregroundStyle(STColor.textSecondary)
 
@@ -78,6 +98,15 @@ struct CreatorSignInView: View {
 
             field(title: "Password", text: $password, field: .password, secure: true)
                 .textContentType(.password)
+
+            Button {
+                showForgotPassword = true
+            } label: {
+                Text("Forgot password?")
+                    .font(STFont.body(13, weight: .semibold))
+                    .foregroundStyle(STColor.primary)
+            }
+            .buttonStyle(.plain)
 
             if let error = auth.lastError {
                 Text(error)
@@ -105,9 +134,43 @@ struct CreatorSignInView: View {
             }
             .disabled(auth.isBusy || email.isEmpty || password.isEmpty)
             .opacity(email.isEmpty || password.isEmpty ? 0.5 : 1)
+
+            HStack {
+                Rectangle().fill(STColor.border).frame(height: 1)
+                Text("or")
+                    .font(STFont.body(12))
+                    .foregroundStyle(STColor.textMuted)
+                Rectangle().fill(STColor.border).frame(height: 1)
+            }
+
+            Button {
+                showSignUp = true
+            } label: {
+                Text("Create creator account")
+                    .font(STFont.body(15, weight: .semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .foregroundStyle(STColor.primary)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(STColor.primary.opacity(0.5), lineWidth: 1.5)
+                    )
+            }
+            .buttonStyle(.plain)
+
+            Text("Sign up covers Films/Shows and other studio types on the web. This app opens the command center for Content Creator catalogue & production tools after your plan is active.")
+                .font(STFont.body(11))
+                .foregroundStyle(STColor.textMuted)
         }
         .padding(22)
         .glassPanel()
+    }
+
+    private var legalNote: some View {
+        Text("Subscriptions, per-film upload fees, and marketplace purchases are managed on story-time.online (multi-platform studio). No digital-goods charges are processed through the App Store.")
+            .font(STFont.body(11))
+            .foregroundStyle(STColor.textMuted)
+            .multilineTextAlignment(.center)
     }
 
     private func field(title: String, text: Binding<String>, field: Field, secure: Bool) -> some View {

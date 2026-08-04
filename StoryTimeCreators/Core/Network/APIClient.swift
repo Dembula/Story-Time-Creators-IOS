@@ -80,7 +80,9 @@ struct APIClient {
         var req = URLRequest(url: url)
         req.httpMethod = method
         req.setValue("application/json", forHTTPHeaderField: "Accept")
-        req.setValue("StoryTimeCreators-iOS", forHTTPHeaderField: "User-Agent")
+        req.setValue(DeviceIdentity.userAgent, forHTTPHeaderField: "User-Agent")
+        req.setValue(DeviceIdentity.platform, forHTTPHeaderField: "X-ST-Platform")
+        req.setValue(DeviceIdentity.deviceSummary, forHTTPHeaderField: "X-ST-Device")
 
         if let body {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")

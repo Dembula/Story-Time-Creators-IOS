@@ -156,74 +156,100 @@ struct ProjectToolDetailView: View {
     private func activityRow(_ row: ToolActivityRow, index: Int) -> some View {
         HStack(alignment: .top, spacing: 0) {
             VStack(spacing: 0) {
-                Circle()
-                    .fill(STColor.primary)
-                    .frame(width: 10, height: 10)
-                    .padding(.top, 16)
+                ZStack {
+                    Circle()
+                        .fill(STColor.surface)
+                        .frame(width: 18, height: 18)
+                    Circle()
+                        .fill(STColor.brandGradient)
+                        .frame(width: 10, height: 10)
+                    Circle()
+                        .stroke(STColor.primary.opacity(0.5), lineWidth: 1)
+                        .frame(width: 18, height: 18)
+                }
+                .padding(.top, 18)
                 if index < vm.rows.count - 1 {
                     Rectangle()
-                        .fill(STColor.primary.opacity(0.25))
+                        .fill(
+                            LinearGradient(
+                                colors: [STColor.primary.opacity(0.45), STColor.primary.opacity(0.08)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
                         .frame(width: 2)
-                        .frame(minHeight: 40)
+                        .frame(maxHeight: .infinity)
                 }
             }
-            .frame(width: 20, alignment: .top)
+            .frame(width: 22, alignment: .top)
 
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: row.icon)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(STColor.accent)
-                    .frame(width: 38, height: 38)
-                    .background(
-                        RoundedRectangle(cornerRadius: 11, style: .continuous)
-                            .fill(STColor.primary.opacity(0.14))
-                    )
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: row.icon)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(.black)
+                        .frame(width: 40, height: 40)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(STColor.brandGradient)
+                        )
 
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text(row.title)
-                            .font(STFont.body(14, weight: .semibold))
-                            .foregroundStyle(STColor.textPrimary)
-                        Spacer(minLength: 8)
-                        if let kind = row.kind, !kind.isEmpty {
-                            Text(kind.replacingOccurrences(of: "_", with: " "))
-                                .font(STFont.body(9, weight: .bold))
-                                .foregroundStyle(STColor.primary)
-                                .padding(.horizontal, 7)
-                                .padding(.vertical, 3)
-                                .background(Capsule().fill(STColor.primary.opacity(0.15)))
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(row.title)
+                                .font(STFont.body(15, weight: .semibold))
+                                .foregroundStyle(STColor.textPrimary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 6)
+                            if let kind = row.kind, !kind.isEmpty {
+                                Text(kind.replacingOccurrences(of: "_", with: " ").uppercased())
+                                    .font(STFont.body(9, weight: .bold))
+                                    .tracking(0.4)
+                                    .foregroundStyle(STColor.accent)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Capsule().fill(STColor.primary.opacity(0.16)))
+                            }
                         }
-                    }
-                    if let detail = row.detail, !detail.isEmpty {
-                        Text(detail)
-                            .font(STFont.body(13))
-                            .foregroundStyle(STColor.textSecondary)
-                            .lineLimit(5)
-                    }
-                    HStack(spacing: 10) {
-                        if let actor = row.actorName {
-                            Label(actor, systemImage: "person.fill")
+                        if let detail = row.detail, !detail.isEmpty {
+                            Text(detail)
+                                .font(STFont.body(13))
+                                .foregroundStyle(STColor.textSecondary)
+                                .lineLimit(6)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
-                        if let ts = row.timestamp, !ts.isEmpty {
-                            Label(ts, systemImage: "clock")
+                        HStack(spacing: 12) {
+                            if let actor = row.actorName, !actor.isEmpty {
+                                Label(actor, systemImage: "person.fill")
+                            }
+                            if let ts = row.timestamp, !ts.isEmpty {
+                                Label(ts, systemImage: "clock")
+                            }
                         }
+                        .font(STFont.body(11, weight: .medium))
+                        .foregroundStyle(STColor.textMuted)
                     }
-                    .font(STFont.body(10))
-                    .foregroundStyle(STColor.textMuted)
                 }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(STColor.surface)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [STColor.primary.opacity(0.35), STColor.border],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 1
+                                )
+                        )
+                )
+                .padding(.leading, 10)
+                .padding(.bottom, 14)
             }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(STColor.surface)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .stroke(STColor.border, lineWidth: 1)
-                    )
-            )
-            .padding(.leading, 8)
-            .padding(.bottom, 10)
         }
     }
 }

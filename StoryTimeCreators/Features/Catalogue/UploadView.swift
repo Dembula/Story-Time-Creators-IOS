@@ -13,6 +13,12 @@ struct UploadView: View {
     @State private var trailerItem: PhotosPickerItem?
     @State private var showMoreTypes = false
     @State private var genreQuery = ""
+    @State private var checkoutRoute: CheckoutRoute?
+
+    private struct CheckoutRoute: Identifiable {
+        let id = UUID()
+        let url: URL
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -20,7 +26,7 @@ struct UploadView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     NoPayBanner(
-                        text: "Upload media and save drafts from your device. Review submission checkout stays on the web studio — no charges here."
+                        text: "Save drafts free here. If you’re on pay-per-film, submitting for review opens a secure Story Time payment window (R99.99) — the same multi-platform web studio, not App Store billing."
                     )
 
                     switch vm.step {
@@ -51,6 +57,18 @@ struct UploadView: View {
             if let pid = router.selectedProjectId {
                 vm.linkedProjectId = pid
             }
+        }
+        .sheet(item: $checkoutRoute) { route in
+            AuthenticatedWebBrowser(
+                url: route.url,
+                title: "Upload fee",
+                mode: .checkout,
+                onFinished: {
+                    checkoutRoute = nil
+                    vm.statusMessage = "If payment succeeded, your title moves to review. Check My Catalogue."
+                    vm.succeeded = true
+                }
+            )
         }
     }
 
@@ -87,40 +105,77 @@ struct UploadView: View {
         case 2: return "2 · Title & details"
         case 3: return "3 · Media & assets"
         case 4: return "4 · Metadata"
-        default: return "5 · Review & save draft"
+        default: return "5 · Review · save draft or submit"
         }
     }
 
     private var navBar: some View {
-        HStack(spacing: 12) {
-            if vm.step > 1 {
-                Button("Back") { withAnimation(.easeInOut(duration: 0.2)) { vm.step -= 1 } }
-                    .font(STFont.body(15, weight: .semibold))
-                    .foregroundStyle(STColor.textPrimary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(RoundedRectangle(cornerRadius: 14).stroke(STColor.border))
-            }
+        VStack(spacing: 10) {
+            if vm.step == 5 {
+                HStack(spacing: 12) {
+                    Button {
+                        Task {
+                            await vm.submit(auth: auth, asDraft: true)
+                        }
+                    } label: {
+                        HStack {
+                            if vm.isSubmitting && vm.lastSubmitWasDraft { ProgressView().tint(STColor.textPrimary) }
+                            Text("Save draft")
+                                .font(STFont.body(14, weight: .semibold))
+                        }
+                        .foregroundStyle(STColor.textPrimary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(RoundedRectangle(cornerRadius: 14).stroke(STColor.border))
+                    }
+                    .disabled(!vm.canAdvance || vm.isSubmitting)
 
-            Button {
-                if vm.step < 5 {
-                    withAnimation(.easeInOut(duration: 0.2)) { vm.step += 1 }
-                } else {
-                    Task { await vm.submit(auth: auth) }
+                    Button {
+                        Task {
+                            let result = await vm.submit(auth: auth, asDraft: false)
+                            if let urlString = result?.checkoutUrl, let url = URL(string: urlString) {
+                                checkoutRoute = CheckoutRoute(url: url)
+                            }
+                        }
+                    } label: {
+                        HStack {
+                            if vm.isSubmitting && !vm.lastSubmitWasDraft { ProgressView().tint(.black) }
+                            Text(vm.isSubmitting && !vm.lastSubmitWasDraft ? "Submitting…" : "Submit for review")
+                                .font(STFont.body(14, weight: .semibold))
+                        }
+                        .foregroundStyle(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(RoundedRectangle(cornerRadius: 14).fill(STColor.brandGradient))
+                    }
+                    .disabled(!vm.canAdvance || vm.isSubmitting || !vm.canSubmitForReview)
+                    .opacity(vm.canSubmitForReview ? 1 : 0.45)
                 }
-            } label: {
-                HStack {
-                    if vm.isSubmitting { ProgressView().tint(.black) }
-                    Text(vm.step < 5 ? "Continue" : (vm.isSubmitting ? "Saving…" : "Save draft"))
-                        .font(STFont.body(15, weight: .semibold))
+            } else {
+                HStack(spacing: 12) {
+                    if vm.step > 1 {
+                        Button("Back") { withAnimation(.easeInOut(duration: 0.2)) { vm.step -= 1 } }
+                            .font(STFont.body(15, weight: .semibold))
+                            .foregroundStyle(STColor.textPrimary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(RoundedRectangle(cornerRadius: 14).stroke(STColor.border))
+                    }
+
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { vm.step += 1 }
+                    } label: {
+                        Text("Continue")
+                            .font(STFont.body(15, weight: .semibold))
+                            .foregroundStyle(.black)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(RoundedRectangle(cornerRadius: 14).fill(STColor.brandGradient))
+                    }
+                    .disabled(!vm.canAdvance)
+                    .opacity(vm.canAdvance ? 1 : 0.45)
                 }
-                .foregroundStyle(.black)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(RoundedRectangle(cornerRadius: 14).fill(STColor.brandGradient))
             }
-            .disabled(!vm.canAdvance || vm.isSubmitting)
-            .opacity(vm.canAdvance ? 1 : 0.45)
         }
         .padding(16)
         .background(STColor.surface.opacity(0.98))
@@ -378,11 +433,11 @@ struct UploadView: View {
             reviewRow("Country", vm.country)
             reviewRow("Rating", vm.ageRating.isEmpty ? "—" : vm.ageRating)
             reviewRow("Poster", vm.posterUrl == nil ? "Missing" : "Ready")
-            reviewRow("Main video", vm.type.isLongForm ? "Episodes on web" : (vm.videoUrl == nil ? "Optional for draft" : "Ready"))
+            reviewRow("Main video", vm.type.isLongForm ? "Episodes on web" : (vm.videoUrl == nil ? "Required to submit" : "Ready"))
             reviewRow("Trailer", vm.trailerUrl == nil ? "—" : "Ready")
             reviewRow("Script", vm.scriptUrl == nil ? "—" : "Ready")
 
-            Text("Saves as DRAFT to My Catalogue — finish review & payment on the web studio when ready.")
+            Text("Drafts never charge. Submit for review may open a pay-per-film checkout (if that’s your plan). Unlimited catalogue plans skip the fee.")
                 .font(STFont.body(12))
                 .foregroundStyle(STColor.textSecondary)
                 .padding(.top, 4)
@@ -744,6 +799,7 @@ private final class UploadViewModel: ObservableObject {
     @Published var linkedProjectId: String?
     @Published var savedContentId: String?
     @Published var isSubmitting = false
+    @Published var lastSubmitWasDraft = true
     @Published var busySlot: UploadAssetSlot?
     @Published var uploadProgress: Double = 0
     @Published var statusMessage: String?
@@ -759,6 +815,13 @@ private final class UploadViewModel: ObservableObject {
         case 2: return !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         default: return true
         }
+    }
+
+    /// Non-draft submit requires main video for single-title types (matches API).
+    var canSubmitForReview: Bool {
+        guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        if type.isLongForm { return true }
+        return videoUrl != nil
     }
 
     func uploadPhotos(_ item: PhotosPickerItem?, slot: UploadAssetSlot) async {
@@ -813,10 +876,18 @@ private final class UploadViewModel: ObservableObject {
         }
     }
 
-    func submit(auth: AuthService) async {
+    @discardableResult
+    func submit(auth: AuthService, asDraft: Bool) async -> CreateContentResult? {
         isSubmitting = true
+        lastSubmitWasDraft = asDraft
         statusMessage = nil
         defer { isSubmitting = false }
+
+        if !asDraft, !type.isLongForm, videoUrl == nil {
+            succeeded = false
+            statusMessage = "Add a main video before submitting for review (or save as draft)."
+            return nil
+        }
 
         let body = CreateContentBody(
             contentId: savedContentId,
@@ -837,20 +908,35 @@ private final class UploadViewModel: ObservableObject {
             duration: Int(duration),
             episodes: type.isLongForm ? Int(episodes) : nil,
             linkedProjectId: linkedProjectId,
-            reviewStatus: "DRAFT"
+            reviewStatus: asDraft ? "DRAFT" : "PENDING"
         )
 
         do {
-            if let item: CreatorContentItem = try? await client.post("/api/creator/content", body: body) {
-                savedContentId = item.id
-            } else {
-                _ = try await client.post("/api/creator/content", body: body) as OkResponse
+            let result: CreateContentResult = try await client.post("/api/creator/content", body: body)
+            if let id = result.id { savedContentId = id }
+            if let err = result.error, !err.isEmpty {
+                succeeded = false
+                statusMessage = err
+                return result
+            }
+            if result.requiresPayment == true, let url = result.checkoutUrl, !url.isEmpty {
+                succeeded = true
+                let fee = result.uploadFee.map { String(format: "R%.2f" , $0) } ?? "R99.99"
+                statusMessage = "Title saved. Complete the \(fee) upload fee in the secure window."
+                return result
             }
             succeeded = true
-            statusMessage = "Draft saved to My Catalogue."
+            if asDraft {
+                statusMessage = "Draft saved to My Catalogue."
+            } else {
+                let status = result.reviewStatus ?? "PENDING"
+                statusMessage = "Submitted for review (\(status.replacingOccurrences(of: "_", with: " ")))."
+            }
+            return result
         } catch {
             succeeded = false
             statusMessage = error.localizedDescription
+            return nil
         }
     }
 

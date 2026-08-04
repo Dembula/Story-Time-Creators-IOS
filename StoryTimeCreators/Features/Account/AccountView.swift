@@ -3,6 +3,14 @@ import SwiftUI
 struct AccountView: View {
     @EnvironmentObject private var auth: AuthService
     @StateObject private var vm = AccountViewModel()
+    @State private var webDestination: WebDestination?
+    @State private var showNativeEditor = false
+
+    private struct WebDestination: Identifiable {
+        let id = UUID()
+        let url: URL
+        let title: String
+    }
 
     var body: some View {
         Group {
@@ -12,19 +20,270 @@ struct AccountView: View {
             case .error(let message) where vm.user == nil:
                 ErrorStateView(message: message, retry: { Task { await vm.refresh(auth: auth) } })
             default:
-                formContent
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        profileHeader
+
+                        if auth.needsPlanSetup {
+                            planAlert
+                        }
+
+                        settingsGroup(title: "Studio") {
+                            settingsRow(
+                                title: "Creator plan & billing",
+                                subtitle: vm.licenseSubtitle,
+                                systemImage: "creditcard.fill"
+                            ) {
+                                openWeb(
+                                    auth.needsPlanSetup
+                                        ? (auth.pendingOnboardingPath.map { AppConfig.webURL(path: $0) } ?? AppConfig.creatorLicenseOnboardingURL)
+                                        : AppConfig.creatorLicenseOnboardingURL,
+                                    title: "Plan & billing"
+                                )
+                            }
+                            settingsRow(
+                                title: "Web studio account",
+                                subtitle: "Full settings, notifications, company seats",
+                                systemImage: "safari"
+                            ) {
+                                openWeb(AppConfig.creatorAccountURL, title: "Studio account")
+                            }
+                            settingsRow(
+                                title: "Command Center (web)",
+                                subtitle: "Advanced analytics & exports",
+                                systemImage: "chart.bar.doc.horizontal"
+                            ) {
+                                openWeb(AppConfig.creatorCommandCenterURL, title: "Command Center")
+                            }
+                        }
+
+                        settingsGroup(title: "Catalogue") {
+                            settingsRow(
+                                title: "My Catalogue (web)",
+                                subtitle: "Publish status, seasons, review notes",
+                                systemImage: "film.stack"
+                            ) {
+                                openWeb(AppConfig.creatorCatalogueURL, title: "Catalogue")
+                            }
+                            settingsRow(
+                                title: "Upload on web",
+                                subtitle: "Episodes & advanced submission tools",
+                                systemImage: "arrow.up.circle"
+                            ) {
+                                openWeb(AppConfig.creatorUploadURL, title: "Upload")
+                            }
+                            settingsRow(
+                                title: "Originals & competitions",
+                                subtitle: "Votes, entries, platform support",
+                                systemImage: "trophy"
+                            ) {
+                                openWeb(AppConfig.creatorOriginalsURL, title: "Originals")
+                            }
+                        }
+
+                        settingsGroup(title: "Profile") {
+                            settingsRow(
+                                title: "Edit profile",
+                                subtitle: "Name, bio, network identity, password",
+                                systemImage: "person.crop.circle"
+                            ) {
+                                showNativeEditor = true
+                            }
+                        }
+
+                        settingsGroup(title: "About this app") {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Story Time Creators")
+                                    .font(STFont.body(14, weight: .semibold))
+                                    .foregroundStyle(STColor.textPrimary)
+                                Text(DeviceIdentity.deviceSummary)
+                                    .font(STFont.body(12))
+                                    .foregroundStyle(STColor.textMuted)
+                                Text("Plan fees, per-film upload fees, and marketplace payments are collected on story-time.online — the same multi-platform studio used on the web. This app does not process App Store digital-goods purchases.")
+                                    .font(STFont.body(11))
+                                    .foregroundStyle(STColor.textMuted)
+                            }
+                            .padding(14)
+                        }
+
+                        Button(role: .destructive) {
+                            Task { await auth.signOut() }
+                        } label: {
+                            Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right")
+                                .font(STFont.body(15, weight: .semibold))
+                                .foregroundStyle(STColor.danger)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 14)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                        .stroke(STColor.danger.opacity(0.4))
+                                )
+                        }
+                    }
+                    .padding(16)
+                    .padding(.bottom, 32)
+                }
             }
         }
         .background(STColor.background)
-        .task { await vm.refresh(auth: auth) }
-        .refreshable { await vm.refresh(auth: auth) }
+        .task {
+            await vm.refresh(auth: auth)
+            await auth.refreshPackageGate()
+            await vm.loadLicense()
+        }
+        .refreshable {
+            await vm.refresh(auth: auth)
+            await auth.refreshPackageGate()
+            await vm.loadLicense()
+        }
+        .sheet(item: $webDestination) { dest in
+            AuthenticatedWebBrowser(
+                url: dest.url,
+                title: dest.title,
+                mode: .account,
+                onFinished: {
+                    Task {
+                        await auth.refreshPackageGate()
+                        await vm.refresh(auth: auth)
+                        await vm.loadLicense()
+                    }
+                }
+            )
+        }
+        .sheet(isPresented: $showNativeEditor) {
+            NavigationStack {
+                ProfileEditorSheet(vm: vm)
+                    .environmentObject(auth)
+            }
+            .preferredColorScheme(.dark)
+        }
     }
 
-    private var formContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                profileHeader
+    private var planAlert: some View {
+        Button {
+            openWeb(
+                auth.pendingOnboardingPath.map { AppConfig.webURL(path: $0) } ?? AppConfig.creatorLicenseOnboardingURL,
+                title: "Finish plan"
+            )
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.black)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Plan setup incomplete")
+                        .font(STFont.body(14, weight: .bold))
+                        .foregroundStyle(.black)
+                    Text("Complete your license (pay-per-film or yearly) to unlock uploads.")
+                        .font(STFont.body(12))
+                        .foregroundStyle(.black.opacity(0.8))
+                }
+                Spacer()
+                Text("Continue")
+                    .font(STFont.body(12, weight: .bold))
+                    .foregroundStyle(.black)
+            }
+            .padding(14)
+            .background(RoundedRectangle(cornerRadius: 16).fill(STColor.brandGradient))
+        }
+        .buttonStyle(.plain)
+    }
 
+    private var profileHeader: some View {
+        Button {
+            showNativeEditor = true
+        } label: {
+            HStack(spacing: 14) {
+                Circle()
+                    .fill(STColor.primary.opacity(0.2))
+                    .frame(width: 64, height: 64)
+                    .overlay {
+                        Text(String((vm.user?.displayName ?? "C").prefix(1)).uppercased())
+                            .font(STFont.display(26, weight: .bold))
+                            .foregroundStyle(STColor.primary)
+                    }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(vm.user?.displayName ?? "Creator")
+                        .font(STFont.display(20, weight: .bold))
+                        .foregroundStyle(STColor.textPrimary)
+                    if let email = vm.user?.email {
+                        Text(email).font(STFont.body(13)).foregroundStyle(STColor.textSecondary)
+                    }
+                    Text(vm.licenseSubtitle)
+                        .font(STFont.body(11, weight: .semibold))
+                        .foregroundStyle(STColor.accent)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(STColor.textMuted)
+            }
+            .padding(16)
+            .glassPanel()
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func settingsGroup(title: String, @ViewBuilder content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(STFont.body(12, weight: .bold))
+                .foregroundStyle(STColor.textMuted)
+                .tracking(0.6)
+            VStack(spacing: 0) {
+                content()
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(STColor.surface)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(STColor.border, lineWidth: 1)
+                    )
+            )
+        }
+    }
+
+    private func settingsRow(title: String, subtitle: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(STColor.primary)
+                    .frame(width: 34, height: 34)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(STColor.primary.opacity(0.14)))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(STFont.body(14, weight: .semibold))
+                        .foregroundStyle(STColor.textPrimary)
+                    Text(subtitle)
+                        .font(STFont.body(11))
+                        .foregroundStyle(STColor.textMuted)
+                        .lineLimit(2)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(STColor.textMuted)
+            }
+            .padding(14)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func openWeb(_ url: URL, title: String) {
+        webDestination = WebDestination(url: url, title: title)
+    }
+}
+
+// MARK: - Native profile editor
+
+private struct ProfileEditorSheet: View {
+    @EnvironmentObject private var auth: AuthService
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var vm: AccountViewModel
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
                 section("Public profile") {
                     field("Display name", text: $vm.name)
                     field("Professional name", text: $vm.professionalName)
@@ -34,12 +293,10 @@ struct AccountView: View {
                     field("Website", text: $vm.website)
                     bioField
                 }
-
                 section("Contact") {
                     field("Email", text: $vm.email)
                     field("Phone", text: $vm.phoneNumber)
                 }
-
                 section("Creator details") {
                     field("Primary role", text: $vm.primaryRole)
                     field("Skills", text: $vm.skills)
@@ -47,19 +304,21 @@ struct AccountView: View {
                     field("Years experience", text: $vm.yearsExperience)
                     field("Availability", text: $vm.availabilityStatus)
                 }
-
                 section("Security") {
                     field("Current password", text: $vm.currentPassword, secure: true)
                     field("New password", text: $vm.newPassword, secure: true)
                 }
-
                 if let saveMessage = vm.saveMessage {
                     Text(saveMessage)
                         .font(STFont.body(13))
                         .foregroundStyle(vm.saveSucceeded ? STColor.success : STColor.danger)
                 }
-
-                Button { Task { await vm.save(auth: auth) } } label: {
+                Button {
+                    Task {
+                        await vm.save(auth: auth)
+                        if vm.saveSucceeded { dismiss() }
+                    }
+                } label: {
                     HStack {
                         if vm.isSaving { ProgressView().tint(.black) }
                         Text("Save changes")
@@ -71,47 +330,17 @@ struct AccountView: View {
                     .background(Capsule().fill(STColor.brandGradient))
                 }
                 .disabled(vm.isSaving)
-
-                Button(role: .destructive) { Task { await auth.signOut() } } label: {
-                    Text("Sign out")
-                        .font(STFont.body(15, weight: .semibold))
-                        .foregroundStyle(STColor.danger)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(RoundedRectangle(cornerRadius: 14).stroke(STColor.danger.opacity(0.4)))
-                }
             }
             .padding(16)
         }
-    }
-
-    private var profileHeader: some View {
-        HStack(spacing: 14) {
-            Circle()
-                .fill(STColor.primary.opacity(0.2))
-                .frame(width: 72, height: 72)
-                .overlay {
-                    Text(String((vm.user?.displayName ?? "C").prefix(1)).uppercased())
-                        .font(STFont.display(28, weight: .bold))
-                        .foregroundStyle(STColor.primary)
-                }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(vm.user?.displayName ?? "Creator")
-                    .font(STFont.display(20, weight: .bold))
-                    .foregroundStyle(STColor.textPrimary)
-                if let email = vm.user?.email {
-                    Text(email).font(STFont.body(13)).foregroundStyle(STColor.textSecondary)
-                }
-                if let score = vm.user?.reputationScore {
-                    Text("Reputation \(Int(score))")
-                        .font(STFont.body(11, weight: .semibold))
-                        .foregroundStyle(STColor.accent)
-                }
+        .background(STColor.background)
+        .navigationTitle("Edit profile")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Close") { dismiss() }
             }
-            Spacer()
         }
-        .padding(16)
-        .glassPanel()
     }
 
     private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
@@ -148,12 +377,17 @@ struct AccountView: View {
     }
 }
 
+// MARK: - View model
+
 @MainActor
-private final class AccountViewModel: ObservableObject {
+final class AccountViewModel: ObservableObject {
     enum LoadState: Equatable { case idle, loading, loaded, error(String) }
 
     @Published private(set) var user: CreatorUser?
     @Published private(set) var state: LoadState = .idle
+    @Published private(set) var licenseType: String?
+    @Published private(set) var licenseStatus: String?
+
     @Published var name = ""
     @Published var professionalName = ""
     @Published var headline = ""
@@ -176,6 +410,12 @@ private final class AccountViewModel: ObservableObject {
 
     private let client = APIClient.shared
 
+    var licenseSubtitle: String {
+        let type = friendlyLicense(licenseType)
+        let status = (licenseStatus ?? "").isEmpty ? "—" : licenseStatus!
+        return "\(type) · \(status)"
+    }
+
     func refresh(auth: AuthService) async {
         state = .loading
         do {
@@ -186,6 +426,20 @@ private final class AccountViewModel: ObservableObject {
             state = .loaded
         } catch {
             state = .error(mapError(error, auth: auth))
+        }
+    }
+
+    func loadLicense() async {
+        struct LicenseEnvelope: Decodable {
+            var license: LicenseBody?
+            struct LicenseBody: Decodable {
+                var type: String?
+                var status: String?
+            }
+        }
+        if let env: LicenseEnvelope = try? await client.get("/api/creator/distribution-license") {
+            licenseType = env.license?.type
+            licenseStatus = env.license?.status
         }
     }
 
@@ -203,6 +457,12 @@ private final class AccountViewModel: ObservableObject {
             location: location.nilIfEmpty,
             website: website.nilIfEmpty,
             networkHandle: networkHandle.nilIfEmpty,
+            professionalName: professionalName.nilIfEmpty,
+            primaryRole: primaryRole.nilIfEmpty,
+            skills: skills.nilIfEmpty,
+            expertiseAreas: expertiseAreas.nilIfEmpty,
+            yearsExperience: Int(yearsExperience),
+            availabilityStatus: availabilityStatus.nilIfEmpty,
             currentPassword: currentPassword.nilIfEmpty,
             newPassword: newPassword.nilIfEmpty
         )
@@ -232,6 +492,25 @@ private final class AccountViewModel: ObservableObject {
         networkHandle = me.networkHandle ?? ""
         email = me.email ?? ""
         phoneNumber = me.phoneNumber ?? ""
+        primaryRole = me.primaryRole ?? ""
+        skills = me.skills ?? ""
+        expertiseAreas = me.expertiseAreas ?? ""
+        if let years = me.yearsExperience {
+            yearsExperience = "\(years)"
+        } else {
+            yearsExperience = ""
+        }
+        availabilityStatus = me.availabilityStatus ?? ""
+    }
+
+    private func friendlyLicense(_ raw: String?) -> String {
+        guard let raw, !raw.isEmpty else { return "No plan loaded" }
+        if raw.contains("PER_FILM") || raw.contains("PER_UPLOAD") { return "Pay per film" }
+        if raw.contains("PIPELINE") && raw.contains("_M") { return "Pipeline · monthly" }
+        if raw.contains("PIPELINE") { return "Pipeline · yearly" }
+        if raw.contains("UPLOAD") { return "Catalogue unlimited" }
+        if raw.contains("YEARLY") { return "Yearly upload" }
+        return raw.replacingOccurrences(of: "_", with: " ")
     }
 
     private func mapError(_ error: Error, auth: AuthService) -> String {
@@ -252,6 +531,12 @@ private struct AccountPatchBody: Encodable {
     var location: String?
     var website: String?
     var networkHandle: String?
+    var professionalName: String?
+    var primaryRole: String?
+    var skills: String?
+    var expertiseAreas: String?
+    var yearsExperience: Int?
+    var availabilityStatus: String?
     var currentPassword: String?
     var newPassword: String?
 }
