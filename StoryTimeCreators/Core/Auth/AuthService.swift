@@ -23,13 +23,58 @@ final class AuthService: ObservableObject {
         currentUser = user
     }
 
-    /// After web signup/checkout, re-read /api/me using exported cookies.
+    /// Quiet check: WK-exported cookies authenticate a creator eligible for this app.
+    /// Does **not** publish `isAuthenticated` — used while the signup webview is still open
+    /// so we don’t tear down the sign-in UI before plan activation finishes.
+    func probeCreatorCookieSession() async -> Bool {
+        // Primary: full /api/me with force-Cookie header (see CookieBridge).
+        do {
+            let me: CreatorUser = try await client.get("/api/me")
+            if me.isCreatorPortalEligible { return true }
+        } catch {
+            // fall through to session probe
+        }
+
+        // Fallback: NextAuth session JSON (same cookie jar; useful if /api/me hiccups).
+        struct SessionProbe: Decodable {
+            struct User: Decodable {
+                var id: String?
+                var email: String?
+                var role: String?
+            }
+            var user: User?
+        }
+        do {
+            let session: SessionProbe = try await client.get("/api/auth/session")
+            guard let user = session.user else { return false }
+            let role = (user.role ?? "").uppercased()
+            return role == AppConfig.creatorRole || role == "MUSIC_CREATOR"
+        } catch {
+            return false
+        }
+    }
+
+    /// Whether entry-redirect still points at license / package onboarding.
+    func probePackageNeedsSetup() async -> Bool {
+        struct EntryRedirect: Decodable { var path: String? }
+        do {
+            let entry: EntryRedirect = try await client.get("/api/auth/entry-redirect")
+            let path = entry.path ?? ""
+            if path.isEmpty { return false }
+            return path.contains("onboarding") || path.contains("license") || path.contains("subscription")
+        } catch {
+            // If cookies work for /me but entry-redirect fails, don't trap the user forever —
+            // treat as unknown incomplete only when we have no alternative finish path.
+            return true
+        }
+    }
+
+    /// After web signup/checkout, re-read `/api/me` using exported cookies and open the app session.
     @discardableResult
     func establishSessionFromCookies() async -> Bool {
         do {
             let me: CreatorUser = try await client.get("/api/me")
             guard me.isCreatorPortalEligible else {
-                clearLocalSession()
                 return false
             }
             currentUser = me

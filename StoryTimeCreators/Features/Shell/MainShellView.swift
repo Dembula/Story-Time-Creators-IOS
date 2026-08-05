@@ -72,7 +72,14 @@ struct MainShellView: View {
             AuthenticatedWebBrowser(
                 url: onboardingURL,
                 title: "Creator plan",
-                mode: .account,
+                mode: .planSetup,
+                onSessionEstablished: {
+                    showPlanSetup = false
+                    Task {
+                        await auth.refreshPackageGate()
+                        _ = await auth.establishSessionFromCookies()
+                    }
+                },
                 onFinished: {
                     Task {
                         await auth.refreshPackageGate()

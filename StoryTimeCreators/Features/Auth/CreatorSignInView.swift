@@ -41,8 +41,16 @@ struct CreatorSignInView: View {
                 title: "Create account",
                 mode: .signUp,
                 onSessionEstablished: {
+                    // Browser already exported cookies + established the native session.
+                    // Re-sync once, dismiss sheet — RootView switches to MainShell when authenticated.
                     showSignUp = false
-                    Task { _ = await auth.establishSessionFromCookies() }
+                    Task {
+                        if !auth.isAuthenticated {
+                            _ = await auth.establishSessionFromCookies()
+                        } else {
+                            await auth.refreshPackageGate()
+                        }
+                    }
                 }
             )
         }

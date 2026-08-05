@@ -41,6 +41,7 @@ struct APIClient {
             config.httpCookieStorage = HTTPCookieStorage.shared
             config.timeoutIntervalForRequest = 60
             config.timeoutIntervalForResource = 120
+            config.waitsForConnectivity = true
             self.session = URLSession(configuration: config)
         }
 
@@ -83,6 +84,11 @@ struct APIClient {
         req.setValue(DeviceIdentity.userAgent, forHTTPHeaderField: "User-Agent")
         req.setValue(DeviceIdentity.platform, forHTTPHeaderField: "X-ST-Platform")
         req.setValue(DeviceIdentity.deviceSummary, forHTTPHeaderField: "X-ST-Device")
+        // Force NextAuth cookies from WKWebView export — URLSession matching is unreliable
+        // for `__Secure-next-auth.*` tokens (same pattern as Universe iOS).
+        if let cookieHeader = CookieBridge.cookieHeader(for: url) {
+            req.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+        }
 
         if let body {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -144,6 +150,11 @@ struct APIClient {
         req.httpMethod = "POST"
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue(DeviceIdentity.userAgent, forHTTPHeaderField: "User-Agent")
+        req.setValue(DeviceIdentity.platform, forHTTPHeaderField: "X-ST-Platform")
+        if let cookieHeader = CookieBridge.cookieHeader(for: url) {
+            req.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+        }
         let body = fields
             .map { key, value in
                 "\(key.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? key)=\(value.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? value)"
@@ -164,6 +175,10 @@ struct APIClient {
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("text/event-stream, application/json, text/plain", forHTTPHeaderField: "Accept")
+        req.setValue(DeviceIdentity.userAgent, forHTTPHeaderField: "User-Agent")
+        if let cookieHeader = CookieBridge.cookieHeader(for: url) {
+            req.setValue(cookieHeader, forHTTPHeaderField: "Cookie")
+        }
         req.httpBody = try encoder.encode(AnyEncodable(body))
 
         let (bytes, response) = try await session.bytes(for: req)
