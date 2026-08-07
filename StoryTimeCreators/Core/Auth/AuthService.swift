@@ -207,6 +207,40 @@ final class AuthService: ObservableObject {
         clearLocalSession()
     }
 
+    /// App Store 5.1.1(v) — permanently delete account via production API.
+    func deleteAccount(password: String, confirmation: String = "DELETE") async throws {
+        struct Body: Encodable {
+            var confirmation: String
+            var password: String
+        }
+        struct Response: Decodable {
+            var ok: Bool?
+            var error: String?
+        }
+        isBusy = true
+        lastError = nil
+        defer { isBusy = false }
+
+        do {
+            let res: Response = try await client.post(
+                "/api/account/delete",
+                body: Body(confirmation: confirmation, password: password)
+            )
+            if let err = res.error, !err.isEmpty {
+                lastError = err
+                throw APIError.http(400, err)
+            }
+            clearSessionCookies()
+            clearLocalSession()
+        } catch let api as APIError {
+            lastError = api.errorDescription
+            throw api
+        } catch {
+            lastError = error.localizedDescription
+            throw error
+        }
+    }
+
     private func clearLocalSession() {
         currentUser = nil
         isAuthenticated = false
@@ -216,6 +250,10 @@ final class AuthService: ObservableObject {
     private func clearSessionCookies() {
         guard let cookies = HTTPCookieStorage.shared.cookies(for: AppConfig.apiBaseURL) else { return }
         for cookie in cookies {
+            HTTPCookieStorage.shared.deleteCookie(cookie)
+        }
+        // Also purge any leftover Story Time cookies that URLSession domain match may miss.
+        for cookie in CookieBridge.sharedStoryTimeCookies() {
             HTTPCookieStorage.shared.deleteCookie(cookie)
         }
     }

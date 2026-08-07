@@ -107,6 +107,8 @@ struct ContentDetailView: View {
     let item: CreatorContentItem
     @Environment(\.dismiss) private var dismiss
     @State private var webDestination: WebDestination?
+    @State private var showUploadFee = false
+    @State private var payMessage: String?
 
     private struct WebDestination: Identifiable {
         let id = UUID()
@@ -144,16 +146,25 @@ struct ContentDetailView: View {
                             Text("Payment required")
                                 .font(STFont.body(14, weight: .bold))
                                 .foregroundStyle(STColor.textPrimary)
-                            Text("This title is awaiting the pay-per-film upload fee. Complete payment on the secure Story Time studio window to send it to review.")
+                            Text("This title is awaiting the pay-per-film upload fee. Pay with In-App Purchase so it can be submitted for admin review.")
                                 .font(STFont.body(12))
                                 .foregroundStyle(STColor.textSecondary)
+                            if let payMessage {
+                                Text(payMessage)
+                                    .font(STFont.body(12))
+                                    .foregroundStyle(STColor.success)
+                            }
                             Button {
-                                webDestination = WebDestination(
-                                    url: AppConfig.creatorCatalogueURL,
-                                    title: "Complete payment"
-                                )
+                                if AppConfig.Features.storeKitBillingEnabled {
+                                    showUploadFee = true
+                                } else {
+                                    webDestination = WebDestination(
+                                        url: AppConfig.creatorCatalogueURL,
+                                        title: "Complete payment"
+                                    )
+                                }
                             } label: {
-                                Text("Open studio payment")
+                                Text(AppConfig.Features.storeKitBillingEnabled ? "Pay upload fee (App Store)" : "Open studio payment")
                                     .font(STFont.body(14, weight: .semibold))
                                     .foregroundStyle(.black)
                                     .frame(maxWidth: .infinity)
@@ -195,6 +206,12 @@ struct ContentDetailView: View {
         }
         .sheet(item: $webDestination) { dest in
             AuthenticatedWebBrowser(url: dest.url, title: dest.title, mode: .account)
+        }
+        .sheet(isPresented: $showUploadFee) {
+            UploadFeeStoreView(contentId: item.id, displayFee: "Upload fee") {
+                payMessage = "Payment recorded. Pull to refresh My Catalogue — status should move to review."
+                showUploadFee = false
+            }
         }
     }
 

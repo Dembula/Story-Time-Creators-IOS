@@ -69,24 +69,32 @@ struct MainShellView: View {
             if needs { showPlanSetup = true }
         }
         .sheet(isPresented: $showPlanSetup) {
-            AuthenticatedWebBrowser(
-                url: onboardingURL,
-                title: "Creator plan",
-                mode: .planSetup,
-                onSessionEstablished: {
+            if AppConfig.Features.storeKitBillingEnabled {
+                CreatorPlanStoreView(title: "Finish your creator plan") {
                     showPlanSetup = false
-                    Task {
-                        await auth.refreshPackageGate()
-                        _ = await auth.establishSessionFromCookies()
-                    }
-                },
-                onFinished: {
-                    Task {
-                        await auth.refreshPackageGate()
-                        _ = await auth.establishSessionFromCookies()
-                    }
+                    Task { await auth.refreshPackageGate() }
                 }
-            )
+                .environmentObject(auth)
+            } else {
+                AuthenticatedWebBrowser(
+                    url: onboardingURL,
+                    title: "Creator plan",
+                    mode: .planSetup,
+                    onSessionEstablished: {
+                        showPlanSetup = false
+                        Task {
+                            await auth.refreshPackageGate()
+                            _ = await auth.establishSessionFromCookies()
+                        }
+                    },
+                    onFinished: {
+                        Task {
+                            await auth.refreshPackageGate()
+                            _ = await auth.establishSessionFromCookies()
+                        }
+                    }
+                )
+            }
         }
     }
 
@@ -106,7 +114,7 @@ struct MainShellView: View {
                     Text("Finish your creator plan")
                         .font(STFont.body(13, weight: .bold))
                         .foregroundStyle(.black)
-                    Text("Choose pay-per-film or unlimited uploads, then return here.")
+                    Text("Choose pay-per-film for free signup, or unlock unlimited / pipeline with In-App Purchase.")
                         .font(STFont.body(11))
                         .foregroundStyle(.black.opacity(0.75))
                 }

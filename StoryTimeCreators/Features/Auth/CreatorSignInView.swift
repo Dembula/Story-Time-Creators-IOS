@@ -94,7 +94,7 @@ struct CreatorSignInView: View {
             Text("Sign In")
                 .font(STFont.display(24, weight: .semibold))
                 .foregroundStyle(STColor.textPrimary)
-            Text("Use your content creator email and password. New accounts are created securely in the Story Time studio window — including plan choice and payment when required.")
+            Text("Use your content creator email and password. New accounts create securely in an in-app browser (terms & registration). Creator plans and upload fees use In-App Purchase — then the app signs you into your dashboard.")
                 .font(STFont.body(14))
                 .foregroundStyle(STColor.textSecondary)
 
@@ -175,7 +175,7 @@ struct CreatorSignInView: View {
     }
 
     private var legalNote: some View {
-        Text("Subscriptions, per-film upload fees, and marketplace purchases are managed on story-time.online (multi-platform studio). No digital-goods charges are processed through the App Store.")
+        Text("Creator plan subscriptions and per-film upload fees use In-App Purchase. Marketplace and other multi-platform studio tools remain on story-time.online.")
             .font(STFont.body(11))
             .foregroundStyle(STColor.textMuted)
             .multilineTextAlignment(.center)

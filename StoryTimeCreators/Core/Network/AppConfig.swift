@@ -11,9 +11,9 @@ enum AppConfig {
 
     // MARK: - Auth (opened in-app via secure browser)
 
-    /// Create account — terms gate → signup form → plan selection / PayFast on web.
+    /// Create account — terms → register. Plan purchase is completed with StoreKit in the app.
     static let creatorSignUpURLForApp = URL(
-        string: "https://story-time.online/auth/creator/signup/terms?source=ios_app&platform=ios"
+        string: "https://story-time.online/auth/creator/signup/terms?source=ios_app&platform=ios&billing=storekit"
     )!
     static let creatorSignUpURL = creatorSignUpURLForApp
     static let creatorSignInWebURL = URL(string: "https://story-time.online/auth/creator/signin")!
@@ -29,21 +29,56 @@ enum AppConfig {
     static let creatorCatalogueURL = webBaseURL.appendingPathComponent("creator/catalogue")
     static let creatorOriginalsURL = webBaseURL.appendingPathComponent("creator/originals")
     static let creatorRevenueURL = webBaseURL.appendingPathComponent("creator/command-center")
+    /// Web fallback page for account deletion (always prefer in-app delete first).
+    static let accountDeleteHelpURL = webBaseURL.appendingPathComponent("auth/delete-account")
 
     static func webURL(path: String) -> URL {
         let trimmed = path.hasPrefix("/") ? String(path.dropFirst()) : path
         return webBaseURL.appendingPathComponent(trimmed)
     }
 
-    /// Feature flags — digital goods / SaaS checkout stays on the multi-platform web studio (Apple 3.1.3 / reader-tools companion pattern).
+    // MARK: - App Store In-App Purchase product IDs
+    // Create matching non-consumable / auto-renewable / consumable products in App Store Connect.
+
+    enum IAP {
+        /// Pay-per-film plan activation (free at selection; per-title fee is separate consumable).
+        /// Not sold — activated without charge via the API after user selects the plan.
+        static let planPerFilmPackage = "PER_FILM"
+
+        /// Catalogue unlimited — 1 year access.
+        static let uploadYearly = "online.storytime.creators.sub.upload.yearly"
+        /// Full production pipeline — monthly.
+        static let pipelineMonthly = "online.storytime.creators.sub.pipeline.monthly"
+        /// Full production pipeline — yearly.
+        static let pipelineYearly = "online.storytime.creators.sub.pipeline.yearly"
+        /// One catalogue film submission fee (pay-per-film license).
+        static let perFilmUpload = "online.storytime.creators.upload.perfilm"
+
+        static var subscriptionProductIds: [String] {
+            [uploadYearly, pipelineMonthly, pipelineYearly]
+        }
+
+        static var consumableProductIds: [String] {
+            [perFilmUpload]
+        }
+
+        static var allProductIds: [String] {
+            subscriptionProductIds + consumableProductIds
+        }
+    }
+
+    /// Feature flags for App Review / monetization.
     enum Features {
-        /// Marketplace browse / roster / inquire tools stay available; payment checkouts stay on web studio.
+        /// Digital creator plans and upload fees use StoreKit In-App Purchase (Guideline 3.1.1).
+        static let storeKitBillingEnabled = true
+        /// Do not open PayFast / web checkouts for digital catalogue services on iOS.
+        static let webDigitalCheckoutEnabled = false
+
         static let marketplacePaymentsEnabled = false
         static let auditionListingPaymentsEnabled = false
         static let executiveScriptReviewPaymentsEnabled = false
-        /// Catalogue per-film fee is paid via web checkout (PayFast), not StoreKit.
+        /// Per-film upload fee via StoreKit when storeKitBillingEnabled.
         static let catalogueUploadCheckoutEnabled = true
-        /// License / plan change opens web onboarding or billing.
         static let licensePurchaseEnabled = true
         static let ipMarketplacePurchaseEnabled = false
         static let walletPayoutUIEnabled = false

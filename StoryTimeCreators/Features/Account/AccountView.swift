@@ -5,6 +5,8 @@ struct AccountView: View {
     @StateObject private var vm = AccountViewModel()
     @State private var webDestination: WebDestination?
     @State private var showNativeEditor = false
+    @State private var showPlanStore = false
+    @State private var showDeleteAccount = false
 
     private struct WebDestination: Identifiable {
         let id = UUID()
@@ -34,12 +36,16 @@ struct AccountView: View {
                                 subtitle: vm.licenseSubtitle,
                                 systemImage: "creditcard.fill"
                             ) {
-                                openWeb(
-                                    auth.needsPlanSetup
-                                        ? (auth.pendingOnboardingPath.map { AppConfig.webURL(path: $0) } ?? AppConfig.creatorLicenseOnboardingURL)
-                                        : AppConfig.creatorLicenseOnboardingURL,
-                                    title: "Plan & billing"
-                                )
+                                if AppConfig.Features.storeKitBillingEnabled {
+                                    showPlanStore = true
+                                } else {
+                                    openWeb(
+                                        auth.needsPlanSetup
+                                            ? (auth.pendingOnboardingPath.map { AppConfig.webURL(path: $0) } ?? AppConfig.creatorLicenseOnboardingURL)
+                                            : AppConfig.creatorLicenseOnboardingURL,
+                                        title: "Plan & billing"
+                                    )
+                                }
                             }
                             settingsRow(
                                 title: "Web studio account",
@@ -99,11 +105,21 @@ struct AccountView: View {
                                 Text(DeviceIdentity.deviceSummary)
                                     .font(STFont.body(12))
                                     .foregroundStyle(STColor.textMuted)
-                                Text("Plan fees, per-film upload fees, and marketplace payments are collected on story-time.online — the same multi-platform studio used on the web. This app does not process App Store digital-goods purchases.")
+                                Text("Creator plans and per-film upload fees are available as In-App Purchases. Marketplace and multi-platform studio tools may also be managed on story-time.online.")
                                     .font(STFont.body(11))
                                     .foregroundStyle(STColor.textMuted)
                             }
                             .padding(14)
+                        }
+
+                        settingsGroup(title: "Privacy & data") {
+                            settingsRow(
+                                title: "Delete account",
+                                subtitle: "Permanently remove your Story Time account and data",
+                                systemImage: "trash.fill"
+                            ) {
+                                showDeleteAccount = true
+                            }
                         }
 
                         Button(role: .destructive) {
@@ -157,14 +173,31 @@ struct AccountView: View {
             }
             .preferredColorScheme(.dark)
         }
+        .sheet(isPresented: $showPlanStore) {
+            CreatorPlanStoreView {
+                Task {
+                    await auth.refreshPackageGate()
+                    await vm.loadLicense()
+                }
+            }
+            .environmentObject(auth)
+        }
+        .sheet(isPresented: $showDeleteAccount) {
+            DeleteAccountSheet()
+                .environmentObject(auth)
+        }
     }
 
     private var planAlert: some View {
         Button {
-            openWeb(
-                auth.pendingOnboardingPath.map { AppConfig.webURL(path: $0) } ?? AppConfig.creatorLicenseOnboardingURL,
-                title: "Finish plan"
-            )
+            if AppConfig.Features.storeKitBillingEnabled {
+                showPlanStore = true
+            } else {
+                openWeb(
+                    auth.pendingOnboardingPath.map { AppConfig.webURL(path: $0) } ?? AppConfig.creatorLicenseOnboardingURL,
+                    title: "Finish plan"
+                )
+            }
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -173,7 +206,7 @@ struct AccountView: View {
                     Text("Plan setup incomplete")
                         .font(STFont.body(14, weight: .bold))
                         .foregroundStyle(.black)
-                    Text("Complete your license (pay-per-film or yearly) to unlock uploads.")
+                    Text("Choose pay-per-film (free to start) or purchase a plan with In-App Purchase.")
                         .font(STFont.body(12))
                         .foregroundStyle(.black.opacity(0.8))
                 }
@@ -545,5 +578,110 @@ private extension String {
     var nilIfEmpty: String? {
         let t = trimmingCharacters(in: .whitespacesAndNewlines)
         return t.isEmpty ? nil : t
+    }
+}
+
+// MARK: - Account deletion (App Store 5.1.1(v))
+
+struct DeleteAccountSheet: View {
+    @EnvironmentObject private var auth: AuthService
+    @Environment(\.dismiss) private var dismiss
+    @State private var password = ""
+    @State private var confirmation = ""
+    @State private var isWorking = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("This permanently deletes your Story Time account and associated data. This cannot be undone.")
+                        .font(STFont.body(14))
+                        .foregroundStyle(STColor.textSecondary)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Account password")
+                            .font(STFont.body(12, weight: .medium))
+                            .foregroundStyle(STColor.textMuted)
+                        SecureField("Password", text: $password)
+                            .textContentType(.password)
+                            .padding(12)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(STColor.surfaceElevated))
+                            .foregroundStyle(STColor.textPrimary)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Type DELETE to confirm")
+                            .font(STFont.body(12, weight: .medium))
+                            .foregroundStyle(STColor.textMuted)
+                        TextField("DELETE", text: $confirmation)
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
+                            .padding(12)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(STColor.surfaceElevated))
+                            .foregroundStyle(STColor.textPrimary)
+                    }
+
+                    if let errorMessage {
+                        Text(errorMessage)
+                            .font(STFont.body(13))
+                            .foregroundStyle(STColor.danger)
+                    }
+
+                    Button {
+                        Task { await delete() }
+                    } label: {
+                        HStack {
+                            if isWorking { ProgressView().tint(.white) }
+                            Text(isWorking ? "Deleting…" : "Delete account permanently")
+                                .font(STFont.body(15, weight: .semibold))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .foregroundStyle(.white)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14)
+                                .fill(STColor.danger.opacity(canSubmit ? 1 : 0.4))
+                        )
+                    }
+                    .disabled(!canSubmit || isWorking)
+                    .buttonStyle(.plain)
+
+                    Text("If you have trouble here, you can also complete deletion at story-time.online with your password.")
+                        .font(STFont.body(11))
+                        .foregroundStyle(STColor.textMuted)
+                }
+                .padding(20)
+            }
+            .background(STColor.background)
+            .navigationTitle("Delete account")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .foregroundStyle(STColor.primary)
+                }
+            }
+            .preferredColorScheme(.dark)
+        }
+    }
+
+    private var canSubmit: Bool {
+        !password.isEmpty && confirmation.trimmingCharacters(in: .whitespacesAndNewlines).uppercased() == "DELETE"
+    }
+
+    private func delete() async {
+        errorMessage = nil
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            try await auth.deleteAccount(
+                password: password,
+                confirmation: confirmation.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
+            dismiss()
+        } catch {
+            errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        }
     }
 }

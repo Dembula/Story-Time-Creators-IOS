@@ -14,10 +14,16 @@ struct UploadView: View {
     @State private var showMoreTypes = false
     @State private var genreQuery = ""
     @State private var checkoutRoute: CheckoutRoute?
+    @State private var uploadFeeRoute: UploadFeeRoute?
 
     private struct CheckoutRoute: Identifiable {
         let id = UUID()
         let url: URL
+    }
+
+    private struct UploadFeeRoute: Identifiable {
+        let id: String
+        let feeLabel: String
     }
 
     var body: some View {
@@ -26,7 +32,9 @@ struct UploadView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     NoPayBanner(
-                        text: "Save drafts free here. If you’re on pay-per-film, submitting for review opens a secure Story Time payment window (R99.99) — the same multi-platform web studio, not App Store billing."
+                        text: AppConfig.Features.storeKitBillingEnabled
+                            ? "Save drafts free. On pay-per-film, submitting for review requires an In-App Purchase upload fee before titles reach admin review."
+                            : "Save drafts free here. If you’re on pay-per-film, submitting for review opens a secure payment window."
                     )
 
                     switch vm.step {
@@ -69,6 +77,13 @@ struct UploadView: View {
                     vm.succeeded = true
                 }
             )
+        }
+        .sheet(item: $uploadFeeRoute) { route in
+            UploadFeeStoreView(contentId: route.id, displayFee: route.feeLabel) {
+                uploadFeeRoute = nil
+                vm.statusMessage = "Upload fee paid. Your title is submitted for admin review."
+                vm.succeeded = true
+            }
         }
     }
 
@@ -133,8 +148,22 @@ struct UploadView: View {
                     Button {
                         Task {
                             let result = await vm.submit(auth: auth, asDraft: false)
-                            if let urlString = result?.checkoutUrl, let url = URL(string: urlString) {
-                                checkoutRoute = CheckoutRoute(url: url)
+                            guard let result else { return }
+                            if result.requiresPayment == true {
+                                let contentId = result.id ?? vm.savedContentId
+                                if AppConfig.Features.storeKitBillingEnabled, let contentId, !contentId.isEmpty {
+                                    let fee = result.uploadFee.map { String(format: "$%.2f", $0) } ?? "App Store price"
+                                    uploadFeeRoute = UploadFeeRoute(id: contentId, feeLabel: fee)
+                                    return
+                                }
+                                if AppConfig.Features.webDigitalCheckoutEnabled,
+                                   let urlString = result.checkoutUrl,
+                                   let url = URL(string: urlString) {
+                                    checkoutRoute = CheckoutRoute(url: url)
+                                } else {
+                                    vm.statusMessage = "Payment is required before this title reaches review. Complete the App Store upload fee."
+                                    vm.succeeded = false
+                                }
                             }
                         }
                     } label: {
@@ -437,7 +466,7 @@ struct UploadView: View {
             reviewRow("Trailer", vm.trailerUrl == nil ? "—" : "Ready")
             reviewRow("Script", vm.scriptUrl == nil ? "—" : "Ready")
 
-            Text("Drafts never charge. Submit for review may open a pay-per-film checkout (if that’s your plan). Unlimited catalogue plans skip the fee.")
+            Text("Drafts never charge. Submit for review may require an In-App Purchase upload fee on pay-per-film plans. Unlimited catalogue plans skip the fee.")
                 .font(STFont.body(12))
                 .foregroundStyle(STColor.textSecondary)
                 .padding(.top, 4)
@@ -919,10 +948,14 @@ private final class UploadViewModel: ObservableObject {
                 statusMessage = err
                 return result
             }
-            if result.requiresPayment == true, let url = result.checkoutUrl, !url.isEmpty {
+            if result.requiresPayment == true {
                 succeeded = true
-                let fee = result.uploadFee.map { String(format: "R%.2f" , $0) } ?? "R99.99"
-                statusMessage = "Title saved. Complete the \(fee) upload fee in the secure window."
+                let fee = result.uploadFee.map { String(format: "R%.2f", $0) } ?? "the plan upload fee"
+                if AppConfig.Features.storeKitBillingEnabled {
+                    statusMessage = "Title saved. Complete the \(fee) In-App Purchase to submit for admin review."
+                } else {
+                    statusMessage = "Title saved. Complete the \(fee) upload fee in the secure window."
+                }
                 return result
             }
             succeeded = true

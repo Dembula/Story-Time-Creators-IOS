@@ -25,7 +25,7 @@ struct SafariView: UIViewControllerRepresentable {
 enum WebBrowserMode: Equatable {
     /// Signed-in studio pages — inject app session cookies.
     case account
-    /// Fresh creator signup: terms → register → plan / PayFast → native session handoff.
+    /// Fresh creator signup: terms → register → cookie session handoff; plan uses StoreKit.
     case signUp
     /// Already signed in; finish license/plan in web and return to the native shell.
     case planSetup
@@ -437,8 +437,6 @@ private struct AuthWebView: UIViewRepresentable {
                 return
             }
 
-            // Quick pre-check: no NextAuth cookie in the jar yet → nothing to adopt.
-            // Still try probe after export (covers __Host-tokens that may not match hasSessionCookie).
             // Probe only — do not set isAuthenticated until handoff.
             let hasSession = await AuthService.shared.probeCreatorCookieSession()
             guard hasSession else { return }
@@ -461,7 +459,19 @@ private struct AuthWebView: UIViewRepresentable {
                 || full.contains("payment_status=complete")
                 || full.contains("payment_status=success")
 
-            // Keep the webview open while they pick a plan / finish payment.
+            // With StoreKit billing, hand off as soon as the account session exists so native
+            // In-App Purchase can complete the plan (no PayFast / web digital checkout on iOS).
+            if AppConfig.Features.storeKitBillingEnabled, parent.mode == .signUp {
+                await completeHandoff(
+                    webView,
+                    status: packageIncomplete
+                        ? "Account ready — choose your plan in the app (App Store)…"
+                        : "Account ready — opening the app…"
+                )
+                return
+            }
+
+            // Keep the webview open while they pick a plan / finish payment (web billing only).
             if packageIncomplete && (onOnboarding || onPayPath) && !paymentSettled && !studioDestination {
                 parent.sessionReady = false
                 parent.statusHint =
@@ -476,16 +486,22 @@ private struct AuthWebView: UIViewRepresentable {
                 return
             }
 
+            await completeHandoff(
+                webView,
+                status: parent.mode == .planSetup
+                    ? "Plan active — returning to your dashboard…"
+                    : "Account ready — opening the app…"
+            )
+        }
+
+        @MainActor
+        private func completeHandoff(_ webView: WKWebView, status: String) async {
             handoffInFlight = true
             parent.sessionReady = true
-            parent.statusHint = parent.mode == .planSetup
-                ? "Plan active — returning to your dashboard…"
-                : "Account ready — opening the app…"
-            // Final cookie settle (NextAuth session token can land a beat after SPA redirect).
+            parent.statusHint = status
             try? await Task.sleep(nanoseconds: 400_000_000)
             await CookieBridge.exportCookies(from: webView.configuration.websiteDataStore)
 
-            // Two attempts — first export can race the last Set-Cookie after payment return.
             var opened = await AuthService.shared.establishSessionFromCookies()
             if !opened {
                 try? await Task.sleep(nanoseconds: 500_000_000)
@@ -495,7 +511,7 @@ private struct AuthWebView: UIViewRepresentable {
             guard opened else {
                 handoffInFlight = false
                 parent.sessionReady = false
-                parent.statusHint = "Almost ready — activate your plan, then stay on this screen a moment."
+                parent.statusHint = "Almost ready — stay on this screen a moment."
                 return
             }
 
