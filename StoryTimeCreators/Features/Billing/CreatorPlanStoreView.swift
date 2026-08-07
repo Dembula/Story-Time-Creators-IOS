@@ -174,9 +174,9 @@ struct CreatorPlanStoreView: View {
         message = nil
         succeeded = false
         do {
-            let tx = try await store.purchase(kind)
+            let purchase = try await store.purchase(kind)
             try await store.reportPurchaseToServer(
-                transaction: tx,
+                purchase: purchase,
                 kind: .creatorLicense,
                 package: kind.licensePackage,
                 billing: kind.licenseBilling
@@ -273,9 +273,9 @@ struct UploadFeeStoreView: View {
         message = nil
         defer { isBusy = false }
         do {
-            let tx = try await store.purchase(.perFilmUpload)
+            let purchase = try await store.purchase(.perFilmUpload)
             try await store.reportPurchaseToServer(
-                transaction: tx,
+                purchase: purchase,
                 kind: .contentUpload,
                 contentId: contentId
             )

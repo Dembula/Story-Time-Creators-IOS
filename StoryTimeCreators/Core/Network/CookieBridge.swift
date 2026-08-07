@@ -10,22 +10,32 @@ import WebKit
 enum CookieBridge {
     static func injectSharedCookies(into store: WKWebsiteDataStore) async {
         guard let cookies = HTTPCookieStorage.shared.cookies else { return }
-        let jar = store.httpCookieStore
+        let filtered = cookies.filter(isStoryTimeCookie)
+        guard !filtered.isEmpty else { return }
+
+        // WKHTTPCookieStore is main-actor isolated on current SDKs.
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            let group = DispatchGroup()
-            for cookie in cookies where isStoryTimeCookie(cookie) {
-                group.enter()
-                jar.setCookie(cookie) { group.leave() }
+            Task { @MainActor in
+                let jar = store.httpCookieStore
+                let group = DispatchGroup()
+                for cookie in filtered {
+                    group.enter()
+                    jar.setCookie(cookie) { group.leave() }
+                }
+                group.notify(queue: .main) {
+                    continuation.resume()
+                }
             }
-            group.notify(queue: .main) { continuation.resume() }
         }
     }
 
     /// Push WK cookies into `HTTPCookieStorage.shared` used by `APIClient`.
     static func exportCookies(from store: WKWebsiteDataStore) async {
         let cookies: [HTTPCookie] = await withCheckedContinuation { continuation in
-            store.httpCookieStore.getAllCookies { cookies in
-                continuation.resume(returning: cookies)
+            Task { @MainActor in
+                store.httpCookieStore.getAllCookies { cookies in
+                    continuation.resume(returning: cookies)
+                }
             }
         }
         applyToSharedStorage(cookies)

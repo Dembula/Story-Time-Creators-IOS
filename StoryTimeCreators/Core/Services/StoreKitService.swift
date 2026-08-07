@@ -73,6 +73,13 @@ struct CreatorFreePlanOption {
     static let package = "PER_FILM"
 }
 
+/// Result of a StoreKit purchase including optional JWS (from `VerificationResult`, not `Transaction`).
+struct StorePurchaseResult {
+    let transaction: Transaction
+    /// Signed payload for server verification — from `VerificationResult.jwsRepresentation`.
+    let signedTransaction: String?
+}
+
 @MainActor
 final class StoreKitService: ObservableObject {
     static let shared = StoreKitService()
@@ -112,14 +119,18 @@ final class StoreKitService: ObservableObject {
         products.first { $0.id == kind.productId }
     }
 
-    /// Purchase a StoreKit product and finish the transaction after server activation.
+    /// Purchase a StoreKit product. Caller must `reportPurchaseToServer` then finish is done there.
     @discardableResult
-    func purchase(_ product: Product) async throws -> Transaction {
+    func purchase(_ product: Product) async throws -> StorePurchaseResult {
         let result = try await product.purchase()
         switch result {
         case .success(let verification):
             let transaction = try checkVerified(verification)
-            return transaction
+            // JWS lives on VerificationResult (not Transaction) across current StoreKit SDKs.
+            return StorePurchaseResult(
+                transaction: transaction,
+                signedTransaction: verification.jwsRepresentation
+            )
         case .userCancelled:
             throw StoreError.userCancelled
         case .pending:
@@ -129,7 +140,7 @@ final class StoreKitService: ObservableObject {
         }
     }
 
-    func purchase(_ kind: CreatorStoreProduct) async throws -> Transaction {
+    func purchase(_ kind: CreatorStoreProduct) async throws -> StorePurchaseResult {
         if products.isEmpty {
             await loadProducts()
         }
@@ -171,12 +182,14 @@ final class StoreKitService: ObservableObject {
 
     /// Report a verified App Store transaction so the backend unlocks the plan or upload.
     func reportPurchaseToServer(
-        transaction: Transaction,
+        purchase: StorePurchaseResult,
         kind: PurchaseKind,
         package: String? = nil,
         billing: String? = nil,
         contentId: String? = nil
     ) async throws {
+        let transaction = purchase.transaction
+
         struct Body: Encodable {
             var productId: String
             var transactionId: String
@@ -199,7 +212,7 @@ final class StoreKitService: ObservableObject {
             productId: transaction.productID,
             transactionId: String(transaction.id),
             originalTransactionId: String(transaction.originalID),
-            signedTransaction: transaction.jwsRepresentation,
+            signedTransaction: purchase.signedTransaction,
             kind: kind.rawValue,
             package: package,
             billing: billing,
