@@ -126,11 +126,9 @@ final class StoreKitService: ObservableObject {
         switch result {
         case .success(let verification):
             let transaction = try checkVerified(verification)
-            // JWS lives on VerificationResult (not Transaction) across current StoreKit SDKs.
-            return StorePurchaseResult(
-                transaction: transaction,
-                signedTransaction: verification.jwsRepresentation
-            )
+            // Prefer VerificationResult JWS (StoreKit 2). Fall back to transaction JSON if unavailable.
+            let signed = Self.signedPayload(from: verification) ?? String(data: transaction.jsonRepresentation, encoding: .utf8)
+            return StorePurchaseResult(transaction: transaction, signedTransaction: signed)
         case .userCancelled:
             throw StoreError.userCancelled
         case .pending:
@@ -138,6 +136,12 @@ final class StoreKitService: ObservableObject {
         @unknown default:
             throw StoreError.unknown
         }
+    }
+
+    /// Extract signed transaction payload without requiring Transaction.jwsRepresentation
+    /// (not available on all SDKs; VerificationResult.jwsRepresentation is).
+    private static func signedPayload(from verification: VerificationResult<Transaction>) -> String? {
+        verification.jwsRepresentation
     }
 
     func purchase(_ kind: CreatorStoreProduct) async throws -> StorePurchaseResult {

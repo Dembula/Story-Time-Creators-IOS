@@ -23,9 +23,8 @@ final class AuthService: ObservableObject {
         currentUser = user
     }
 
-    /// Quiet check: WK-exported cookies authenticate a creator eligible for this app.
-    /// Does **not** publish `isAuthenticated` — used while the signup webview is still open
-    /// so we don’t tear down the sign-in UI before plan activation finishes.
+    /// Quiet check: cookies authenticate a creator eligible for this app.
+    /// Does **not** publish `isAuthenticated` — used for handoff probes when needed.
     func probeCreatorCookieSession() async -> Bool {
         // Primary: full /api/me with force-Cookie header (see CookieBridge).
         do {
@@ -69,7 +68,7 @@ final class AuthService: ObservableObject {
         }
     }
 
-    /// After web signup/checkout, re-read `/api/me` using exported cookies and open the app session.
+    /// After cookie export / session handoff, re-read `/api/me` and open the app session.
     @discardableResult
     func establishSessionFromCookies() async -> Bool {
         do {
@@ -120,6 +119,63 @@ final class AuthService: ObservableObject {
                 403,
                 "This app is for film and music creator accounts. Company marketplaces use the web studio."
             )
+        } catch let api as APIError {
+            lastError = api.errorDescription
+            clearLocalSession()
+        } catch {
+            lastError = error.localizedDescription
+            clearLocalSession()
+        }
+    }
+
+    /// Universe-style native signup: create film content creator, then cookie session + package gate.
+    /// Plan purchase happens in-app via StoreKit (`CreatorPlanStoreView`), not web PayFast.
+    func signUp(email: String, password: String, name: String?) async {
+        isBusy = true
+        lastError = nil
+        defer { isBusy = false }
+
+        let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard password.count >= 8 else {
+            lastError = "Password must be at least 8 characters."
+            return
+        }
+        guard !trimmed.isEmpty else {
+            lastError = "Enter a valid email address."
+            return
+        }
+
+        struct RegisterBody: Encodable {
+            var email: String
+            var password: String
+            var type: String
+            var accountStructure: String
+            var name: String?
+        }
+        struct RegisterResponse: Decodable {
+            var ok: Bool?
+            var error: String?
+        }
+
+        do {
+            let displayName = name?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let body = RegisterBody(
+                email: trimmed,
+                password: password,
+                type: "content",
+                accountStructure: "INDIVIDUAL",
+                name: (displayName?.isEmpty == false) ? displayName : nil
+            )
+            let reg: RegisterResponse = try await client.post("/api/creator/register", body: body)
+            if let err = reg.error, !err.isEmpty {
+                throw APIError.http(400, err)
+            }
+            // Register does not create a session — sign in like Universe after signup.
+            if try await attemptCredentialsSignIn(email: trimmed, password: password, role: AppConfig.creatorRole) {
+                return
+            }
+            clearSessionCookies()
+            throw APIError.http(403, "Account created, but this app could not open a content creator session.")
         } catch let api as APIError {
             lastError = api.errorDescription
             clearLocalSession()

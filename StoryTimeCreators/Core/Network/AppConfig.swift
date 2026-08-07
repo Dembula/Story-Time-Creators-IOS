@@ -9,15 +9,18 @@ enum AppConfig {
     /// Primary role for the native Creators app (film / catalogue portal).
     static let creatorRole = "CONTENT_CREATOR"
 
-    // MARK: - Auth (opened in-app via secure browser)
+    // MARK: - Auth (native signup; Safari only for legal + password reset)
 
-    /// Create account — terms → register. Plan purchase is completed with StoreKit in the app.
+    /// Legacy web signup (not used for account creation in the app; native + StoreKit only).
     static let creatorSignUpURLForApp = URL(
         string: "https://story-time.online/auth/creator/signup/terms?source=ios_app&platform=ios&billing=storekit"
     )!
     static let creatorSignUpURL = creatorSignUpURLForApp
     static let creatorSignInWebURL = URL(string: "https://story-time.online/auth/creator/signin")!
     static let forgotPasswordURL = URL(string: "https://story-time.online/auth/forgot-password")!
+    /// Live legal pages (production returns 200; bare `/terms` and `/privacy` 404).
+    static let termsOfUseURL = URL(string: "https://story-time.online/legal/terms")!
+    static let privacyPolicyURL = URL(string: "https://story-time.online/legal/privacy")!
 
     // MARK: - Creator studio web (cookie-synced WKWebView)
 

@@ -78,6 +78,8 @@ struct CreatorPlanStoreView: View {
                             .foregroundStyle(STColor.primary)
                     }
                     .buttonStyle(.plain)
+
+                    legalCopy
                 }
                 .padding(16)
                 .padding(.bottom, 24)
@@ -98,6 +100,22 @@ struct CreatorPlanStoreView: View {
 
     private var planKinds: [CreatorStoreProduct] {
         [.uploadYearly, .pipelineMonthly, .pipelineYearly]
+    }
+
+    private var legalCopy: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Payment is charged to your Apple ID. Auto-renewing subscriptions renew unless cancelled at least 24 hours before the end of the period. Manage in Settings → Apple ID → Subscriptions.")
+                .font(STFont.body(11))
+                .foregroundStyle(STColor.textMuted)
+            HStack(spacing: 16) {
+                Link("Terms of Use", destination: AppConfig.termsOfUseURL)
+                Link("Privacy Policy", destination: AppConfig.privacyPolicyURL)
+            }
+            .font(STFont.body(12, weight: .semibold))
+            .foregroundStyle(STColor.primary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 4)
     }
 
     private func planCard(
@@ -256,6 +274,13 @@ struct UploadFeeStoreView: View {
                     .font(STFont.body(14, weight: .semibold))
                     .foregroundStyle(STColor.textMuted)
                     .frame(maxWidth: .infinity)
+
+                HStack(spacing: 16) {
+                    Link("Terms of Use", destination: AppConfig.termsOfUseURL)
+                    Link("Privacy Policy", destination: AppConfig.privacyPolicyURL)
+                }
+                .font(STFont.body(12, weight: .semibold))
+                .foregroundStyle(STColor.primary)
 
                 Spacer()
             }
