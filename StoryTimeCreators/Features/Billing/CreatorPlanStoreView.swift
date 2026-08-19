@@ -12,6 +12,7 @@ struct CreatorPlanStoreView: View {
     @State private var busyKey: String?
     @State private var message: String?
     @State private var succeeded = false
+    @State private var showManageSubs = false
 
     var body: some View {
         NavigationStack {
@@ -79,6 +80,19 @@ struct CreatorPlanStoreView: View {
                     }
                     .buttonStyle(.plain)
 
+                    if !auth.needsPlanSetup {
+                        Button {
+                            showManageSubs = true
+                        } label: {
+                            Label("Manage existing subscription", systemImage: "arrow.triangle.2.circlepath")
+                                .font(STFont.body(14, weight: .semibold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .foregroundStyle(STColor.primary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
                     legalCopy
                 }
                 .padding(16)
@@ -94,6 +108,7 @@ struct CreatorPlanStoreView: View {
                 }
             }
             .task { await store.loadProducts() }
+            .manageSubscriptionsSheet(isPresented: $showManageSubs)
             .preferredColorScheme(.dark)
         }
     }

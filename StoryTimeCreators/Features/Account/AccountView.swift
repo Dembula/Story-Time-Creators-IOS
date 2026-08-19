@@ -1,4 +1,5 @@
 import SwiftUI
+import StoreKit
 
 struct AccountView: View {
     @EnvironmentObject private var auth: AuthService
@@ -7,6 +8,7 @@ struct AccountView: View {
     @State private var showNativeEditor = false
     @State private var showPlanStore = false
     @State private var showDeleteAccount = false
+    @State private var showManageSubscriptions = false
 
     private struct WebDestination: Identifiable {
         let id = UUID()
@@ -45,6 +47,15 @@ struct AccountView: View {
                                             : AppConfig.creatorLicenseOnboardingURL,
                                         title: "Plan & billing"
                                     )
+                                }
+                            }
+                            if AppConfig.Features.storeKitBillingEnabled {
+                                settingsRow(
+                                    title: "Manage subscription",
+                                    subtitle: "Upgrade, downgrade, or cancel via Apple",
+                                    systemImage: "arrow.triangle.2.circlepath"
+                                ) {
+                                    showManageSubscriptions = true
                                 }
                             }
                             settingsRow(
@@ -113,6 +124,7 @@ struct AccountView: View {
                         }
 
                         settingsGroup(title: "Privacy & data") {
+                            aiConsentRow
                             settingsRow(
                                 title: "Delete account",
                                 subtitle: "Permanently remove your Story Time account and data",
@@ -186,6 +198,34 @@ struct AccountView: View {
             DeleteAccountSheet()
                 .environmentObject(auth)
         }
+        .manageSubscriptionsSheet(isPresented: $showManageSubscriptions)
+    }
+
+    private var aiConsentRow: some View {
+        let consented = UserDefaults.standard.bool(forKey: "va_ai_data_consent_granted")
+        return HStack(spacing: 12) {
+            Image(systemName: "brain.head.profile")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(STColor.primary)
+                .frame(width: 34, height: 34)
+                .background(RoundedRectangle(cornerRadius: 10).fill(STColor.primary.opacity(0.14)))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("AI assistant data sharing")
+                    .font(STFont.body(14, weight: .semibold))
+                    .foregroundStyle(STColor.textPrimary)
+                Text(consented ? "Allowed — messages sent to OpenAI for responses" : "Not allowed")
+                    .font(STFont.body(11))
+                    .foregroundStyle(STColor.textMuted)
+            }
+            Spacer()
+            Toggle("", isOn: Binding(
+                get: { UserDefaults.standard.bool(forKey: "va_ai_data_consent_granted") },
+                set: { UserDefaults.standard.set($0, forKey: "va_ai_data_consent_granted") }
+            ))
+            .labelsHidden()
+            .tint(STColor.primary)
+        }
+        .padding(14)
     }
 
     private var planAlert: some View {

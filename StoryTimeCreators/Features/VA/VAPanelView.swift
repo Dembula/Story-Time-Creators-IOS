@@ -17,9 +17,13 @@ struct VAPanelView: View {
 
                 VStack(spacing: 0) {
                     header
-                    messagesList
-                    suggestionsRow
-                    composer
+                    if !controller.hasConsented {
+                        VAConsentView(controller: controller)
+                    } else {
+                        messagesList
+                        suggestionsRow
+                        composer
+                    }
                 }
                 .frame(width: panelWidth)
                 .frame(maxHeight: .infinity)
@@ -58,9 +62,15 @@ struct VAPanelView: View {
                 Text("Story Time VA")
                     .font(STFont.display(16, weight: .bold))
                     .foregroundStyle(STColor.textPrimary)
-                Text(controller.statusAvailable ? "Online" : "Checking availability…")
-                    .font(STFont.body(11))
-                    .foregroundStyle(controller.statusAvailable ? STColor.success : STColor.textMuted)
+                if controller.hasConsented {
+                    Text(controller.statusAvailable ? "Powered by OpenAI" : "Connecting…")
+                        .font(STFont.body(11))
+                        .foregroundStyle(controller.statusAvailable ? STColor.success : STColor.textMuted)
+                } else {
+                    Text("Consent required")
+                        .font(STFont.body(11))
+                        .foregroundStyle(STColor.textMuted)
+                }
             }
 
             Spacer()

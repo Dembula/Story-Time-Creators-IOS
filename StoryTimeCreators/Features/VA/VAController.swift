@@ -8,8 +8,25 @@ final class VAController: ObservableObject {
     @Published var suggestions: [String] = []
     @Published var isSending = false
     @Published var statusAvailable = false
+    @Published var hasConsented: Bool {
+        didSet { UserDefaults.standard.set(hasConsented, forKey: Self.consentKey) }
+    }
 
     var projectId: String?
+
+    private static let consentKey = "va_ai_data_consent_granted"
+
+    init() {
+        hasConsented = UserDefaults.standard.bool(forKey: Self.consentKey)
+    }
+
+    func grantConsent() {
+        hasConsented = true
+    }
+
+    func revokeConsent() {
+        hasConsented = false
+    }
 
     func open(projectId: String? = nil) {
         self.projectId = projectId
@@ -51,7 +68,7 @@ final class VAController: ObservableObject {
 
     func send(_ text: String) async {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !isSending else { return }
+        guard !trimmed.isEmpty, !isSending, hasConsented else { return }
 
         isSending = true
         messages.append((role: "user", text: trimmed))
