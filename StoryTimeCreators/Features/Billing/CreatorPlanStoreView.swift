@@ -8,7 +8,7 @@ struct CreatorPlanStoreView: View {
 
     @EnvironmentObject private var auth: AuthService
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var store = StoreKitService.shared
+    @ObservedObject private var store = StoreKitService.shared
     @State private var busyKey: String?
     @State private var message: String?
     @State private var succeeded = false
@@ -27,7 +27,8 @@ struct CreatorPlanStoreView: View {
                         title: CreatorFreePlanOption.title,
                         detail: CreatorFreePlanOption.detail,
                         priceLabel: "Free to start",
-                        badge: "Pay as you upload"
+                        badge: "Pay as you upload",
+                        enabled: busyKey == nil
                     ) {
                         await selectPerFilm()
                     }
@@ -38,8 +39,9 @@ struct CreatorPlanStoreView: View {
                             key: kind.productId,
                             title: kind.title,
                             detail: kind.detail,
-                            priceLabel: product?.displayPrice ?? "Loading…",
-                            badge: product == nil ? "Store" : nil
+                            priceLabel: product?.displayPrice ?? (store.isLoading ? "Loading…" : "Unavailable"),
+                            badge: product == nil ? "App Store" : nil,
+                            enabled: busyKey == nil && product != nil && !store.purchaseInFlight
                         ) {
                             await purchase(kind)
                         }
@@ -51,6 +53,22 @@ struct CreatorPlanStoreView: View {
                             .frame(maxWidth: .infinity)
                     }
 
+                    if let catalogError = store.lastError, store.products.isEmpty {
+                        Text(catalogError)
+                            .font(STFont.body(13))
+                            .foregroundStyle(STColor.danger)
+                        Button {
+                            Task { await store.loadProducts() }
+                        } label: {
+                            Text("Retry loading products")
+                                .font(STFont.body(14, weight: .semibold))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .foregroundStyle(STColor.primary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
                     if let message {
                         Text(message)
                             .font(STFont.body(13))
@@ -58,27 +76,16 @@ struct CreatorPlanStoreView: View {
                     }
 
                     Button {
-                        Task {
-                            await store.restore()
-                            await auth.refreshPackageGate()
-                            if !auth.needsPlanSetup {
-                                succeeded = true
-                                message = "Purchases restored."
-                                onCompleted?()
-                                dismiss()
-                            } else {
-                                message = store.lastError ?? "No active subscription found for this Apple ID."
-                                succeeded = false
-                            }
-                        }
+                        Task { await restorePurchases() }
                     } label: {
-                        Text("Restore purchases")
+                        Text(busyKey == "restore" ? "Restoring…" : "Restore purchases")
                             .font(STFont.body(14, weight: .semibold))
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 12)
                             .foregroundStyle(STColor.primary)
                     }
                     .buttonStyle(.plain)
+                    .disabled(busyKey != nil || store.purchaseInFlight)
 
                     if !auth.needsPlanSetup {
                         Button {
@@ -105,9 +112,14 @@ struct CreatorPlanStoreView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }
                         .foregroundStyle(STColor.primary)
+                        .disabled(store.purchaseInFlight || busyKey != nil)
                 }
             }
-            .task { await store.loadProducts() }
+            .task {
+                store.start()
+                await store.loadProducts()
+            }
+            .interactiveDismissDisabled(store.purchaseInFlight || busyKey != nil)
             .manageSubscriptionsSheet(isPresented: $showManageSubs)
             .preferredColorScheme(.dark)
         }
@@ -139,6 +151,7 @@ struct CreatorPlanStoreView: View {
         detail: String,
         priceLabel: String,
         badge: String?,
+        enabled: Bool,
         action: @escaping () async -> Void
     ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -176,8 +189,9 @@ struct CreatorPlanStoreView: View {
                 .padding(.vertical, 12)
                 .foregroundStyle(.black)
                 .background(RoundedRectangle(cornerRadius: 12).fill(STColor.brandGradient))
+                .opacity(enabled ? 1 : 0.45)
             }
-            .disabled(busyKey != nil)
+            .disabled(!enabled)
             .buttonStyle(.plain)
         }
         .padding(16)
@@ -207,13 +221,7 @@ struct CreatorPlanStoreView: View {
         message = nil
         succeeded = false
         do {
-            let purchase = try await store.purchase(kind)
-            try await store.reportPurchaseToServer(
-                purchase: purchase,
-                kind: .creatorLicense,
-                package: kind.licensePackage,
-                billing: kind.licenseBilling
-            )
+            try await store.purchaseLicense(kind)
             await auth.refreshPackageGate()
             succeeded = true
             message = "Plan active."
@@ -223,6 +231,42 @@ struct CreatorPlanStoreView: View {
             if case .userCancelled = err { return }
             message = err.errorDescription
         } catch {
+            message = error.localizedDescription
+        }
+    }
+
+    private func restorePurchases() async {
+        message = nil
+        succeeded = false
+        busyKey = "restore"
+        defer { busyKey = nil }
+        do {
+            try await store.restore()
+            await auth.refreshPackageGate()
+            if !auth.needsPlanSetup {
+                succeeded = true
+                message = "Purchases restored."
+                onCompleted?()
+                dismiss()
+            } else {
+                // Server unlock applied; gate may lag one tick — refresh again.
+                await auth.refreshPackageGate()
+                if !auth.needsPlanSetup {
+                    succeeded = true
+                    message = "Purchases restored."
+                    onCompleted?()
+                    dismiss()
+                } else {
+                    succeeded = false
+                    message = "Purchases were sent to the studio, but your plan is still pending. Try again in a moment."
+                }
+            }
+        } catch let err as StoreKitService.StoreError {
+            if case .userCancelled = err { return }
+            succeeded = false
+            message = err.errorDescription
+        } catch {
+            succeeded = false
             message = error.localizedDescription
         }
     }
@@ -236,7 +280,7 @@ struct UploadFeeStoreView: View {
     var onPaid: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var store = StoreKitService.shared
+    @ObservedObject private var store = StoreKitService.shared
     @State private var isBusy = false
     @State private var message: String?
 
@@ -281,14 +325,28 @@ struct UploadFeeStoreView: View {
                     .padding(.vertical, 14)
                     .foregroundStyle(.black)
                     .background(RoundedRectangle(cornerRadius: 14).fill(STColor.brandGradient))
+                    .opacity(product == nil || isBusy ? 0.45 : 1)
                 }
-                .disabled(isBusy)
+                .disabled(isBusy || product == nil || store.purchaseInFlight)
                 .buttonStyle(.plain)
+
+                if product == nil {
+                    Button {
+                        Task { await store.loadProducts() }
+                    } label: {
+                        Text("Retry loading App Store price")
+                            .font(STFont.body(14, weight: .semibold))
+                            .foregroundStyle(STColor.primary)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.plain)
+                }
 
                 Button("Not now") { dismiss() }
                     .font(STFont.body(14, weight: .semibold))
                     .foregroundStyle(STColor.textMuted)
                     .frame(maxWidth: .infinity)
+                    .disabled(isBusy)
 
                 HStack(spacing: 16) {
                     Link("Terms of Use", destination: AppConfig.termsOfUseURL)
@@ -303,7 +361,11 @@ struct UploadFeeStoreView: View {
             .background(STColor.background)
             .navigationTitle("Submit payment")
             .navigationBarTitleDisplayMode(.inline)
-            .task { await store.loadProducts() }
+            .task {
+                store.start()
+                await store.loadProducts()
+            }
+            .interactiveDismissDisabled(isBusy)
             .preferredColorScheme(.dark)
         }
     }
@@ -313,11 +375,12 @@ struct UploadFeeStoreView: View {
         message = nil
         defer { isBusy = false }
         do {
-            let purchase = try await store.purchase(.perFilmUpload)
+            let purchase = try await store.purchaseUploadFee()
             try await store.reportPurchaseToServer(
                 purchase: purchase,
                 kind: .contentUpload,
-                contentId: contentId
+                contentId: contentId,
+                finish: true
             )
             onPaid?()
             dismiss()
