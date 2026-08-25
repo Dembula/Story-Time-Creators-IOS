@@ -11,6 +11,14 @@ Match **exactly** (product IDs used in the iOS binary):
 
 **Pay per film** plan itself is free to select in-app (no IAP). Upload fee is required on each “Submit for review”.
 
+## Checklist before App Review (sandbox)
+
+1. **Paid Apps Agreement** is Active (Business section).
+2. Each product has **price**, **English localization** (display name + description), and is cleared for the version under review (Ready to Submit / Approved / Waiting for Review).
+3. All four products share subscription group **Creator Plans** (consumable is outside the group).
+4. Test with a **Sandbox Apple ID** on a device/TestFlight build (not only StoreKit Configuration).
+5. After purchase, Confirm plan unlocks (banner “Finish your creator plan” dismisses). If Apple charged but the studio didn’t unlock, tap **Restore purchases** — the app re-sends the signed transaction to `POST /api/creator/ios/purchase`.
+
 Local testing: attach `Configuration.storekit` to the Xcode scheme (Run → Options → StoreKit Configuration).
 
-**Backend deploy required:** ship `_ref-web/src/app/api/creator/ios/purchase/route.ts` to production so App Store transactions unlock licenses and content after purchase.
+**Backend:** production must expose `POST /api/creator/ios/purchase` (Story-Time-Production). The iOS client sends StoreKit 2 JWS as `signedTransaction` / `signedTransactionInfo` / `jwsRepresentation` and never falls back to raw Transaction JSON.
